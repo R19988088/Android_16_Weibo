@@ -58,10 +58,8 @@ android {
             signingConfig = signingConfigs.getByName(
                 if (keystorePropertiesFile.exists()) "release" else "fixed",
             )
+            isMinifyEnabled = true
             isShrinkResources = true
-            optimization {
-                enable = true
-            }
         }
     }
     compileOptions {
