@@ -10665,6 +10665,7 @@ private fun SearchScreen(
     onLikeClick: (FeedItem, Rect) -> Unit,
     onUrlEntityClick: (FeedUrlEntity) -> Unit,
     onOpenLoginSettings: () -> Unit,
+    topContentPadding: Dp = 0.dp,
     mineProfileId: String?,
     searchMode: SearchMode,
     onSearchModeChange: (SearchMode) -> Unit,
@@ -10967,7 +10968,7 @@ private fun SearchScreen(
                         contentPadding = PaddingValues(
                             top = when {
                                 activeQuery != null -> searchHeaderHeight + 8.dp
-                                else -> topInset + 8.dp
+                                else -> topInset + 8.dp + topContentPadding
                             },
                             start = if (activeQuery == null) 16.dp else 0.dp,
                             end = if (activeQuery == null) 16.dp else 0.dp,
@@ -11109,7 +11110,7 @@ private fun SearchScreen(
                             searchHeaderHeight = with(density) { coordinates.size.height.toDp() }
                         }
                         .padding(
-                            top = topInset + 12.dp,
+                            top = topInset + 12.dp + topContentPadding,
                             start = 16.dp,
                             end = 16.dp,
                             bottom = 12.dp,
