@@ -3716,29 +3716,21 @@ fun WeiboApp(
             }
             }
 
-            if (searchBarOverlay.active) {
-                SearchCapsuleField(
-                    value = searchBarOverlay.queryInput,
-                    onValueChange = { searchBarOverlay.queryInput = it },
-                    mode = searchBarOverlay.mode,
-                    onModeChange = searchBarOverlay.onModeChange,
-                    onSearch = searchBarOverlay.onSearch,
-                    onClear = searchBarOverlay.onClear,
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .fillMaxWidth()
-                        .padding(start = 18.dp, end = 18.dp, bottom = searchBarOverlay.bottomPadding)
-                        .zIndex(85f),
-                )
-            }
-
-            if (selectedTab == MainTab.Feed && selectedItem == null && visitedUserId == null) {
+            if (
+                (selectedTab == MainTab.Feed || selectedTab == MainTab.Search) &&
+                selectedItem == null &&
+                visitedUserId == null
+            ) {
                 HomeTopModuleOverlay(
-                    selectedModule = HomeTopModule.Following,
+                    selectedModule = if (selectedTab == MainTab.Search) HomeTopModule.Search else HomeTopModule.Following,
                     onModuleSelected = { module ->
                         when (module) {
                             HomeTopModule.Following -> {
-                                scope.launch { feedListState.animateScrollToTopFixed() }
+                                if (selectedTab == MainTab.Feed) {
+                                    scope.launch { feedListState.animateScrollToTopFixed() }
+                                } else {
+                                    selectedTab = MainTab.Feed
+                                }
                             }
                             HomeTopModule.Search -> {
                                 selectedTab = MainTab.Search
@@ -10459,6 +10451,7 @@ private fun HomeTopModuleOverlay(
     modifier: Modifier = Modifier,
 ) {
     val topInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    val backdrop = LocalLiquidMenuBackdrop.current
     Box(modifier = modifier.fillMaxWidth()) {
         HomeTopProgressiveBlur(
             modifier = Modifier
@@ -10471,6 +10464,7 @@ private fun HomeTopModuleOverlay(
                 .padding(top = topInset + 8.dp)
                 .widthIn(max = 220.dp)
                 .height(44.dp),
+            backdrop = backdrop,
             pill = true,
         ) {
             Row(
@@ -10485,6 +10479,7 @@ private fun HomeTopModuleOverlay(
                         module = module,
                         selected = module == selectedModule,
                         onClick = { onModuleSelected(module) },
+                        backdrop = backdrop,
                         modifier = Modifier.weight(1f),
                     )
                 }
@@ -10498,29 +10493,51 @@ private fun HomeTopModuleButton(
     module: HomeTopModule,
     selected: Boolean,
     onClick: () -> Unit,
+    backdrop: Backdrop?,
     modifier: Modifier = Modifier,
 ) {
-    val selectedColor = if (selected) WeiboFollowOrange else Color.Transparent
     val textColor = if (selected) Color.White else HintCapsuleText
+    val content: @Composable BoxScope.() -> Unit = {
+        Text(
+            text = module.label,
+            style = MaterialTheme.typography.labelLarge,
+            color = textColor,
+            maxLines = 1,
+            modifier = Modifier.align(Alignment.Center),
+        )
+    }
+    val buttonModifier = modifier
+        .fillMaxHeight()
+        .clip(RoundedCornerShape(percent = 50))
+        .clickable(
+            indication = null,
+            interactionSource = remember { MutableInteractionSource() },
+            onClick = onClick,
+        )
+
+    if (selected && backdrop != null) {
+        TransparentLiquidCapsule(
+            backdrop = backdrop,
+            pill = true,
+            modifier = buttonModifier,
+            content = content,
+        )
+        return
+    }
+
     Box(
         modifier = modifier
             .fillMaxHeight()
             .clip(RoundedCornerShape(percent = 50))
-            .background(selectedColor)
+            .background(if (selected) WeiboFollowOrange.copy(alpha = 0.88f) else Color.Transparent)
             .clickable(
                 indication = null,
                 interactionSource = remember { MutableInteractionSource() },
                 onClick = onClick,
             ),
         contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = module.label,
-            style = MaterialTheme.typography.labelLarge,
-            color = textColor,
-            maxLines = 1,
-        )
-    }
+        content = content,
+    )
 }
 
 @Composable
@@ -10532,12 +10549,13 @@ private fun HomeTopProgressiveBlur(
     if (hazeState != null) {
         Box(
             modifier = modifier
+                .clipToBounds()
                 .hazeEffect(
                     state = hazeState,
                     style = HazeStyle(
-                        blurRadius = 24.dp,
                         backgroundColor = background,
-                        tint = HazeTint(background.copy(alpha = 0.42f)),
+                        tint = HazeTint(background.copy(alpha = 0.34f)),
+                        blurRadius = 22.dp,
                     ),
                 ) {
                     progressive = HazeProgressive.verticalGradient(
@@ -10551,8 +10569,9 @@ private fun HomeTopProgressiveBlur(
         Box(
             modifier = modifier.background(
                 Brush.verticalGradient(
-                    0f to background.copy(alpha = 0.92f),
-                    0.7f to background.copy(alpha = 0.58f),
+                    0f to background.copy(alpha = 0.98f),
+                    0.42f to background.copy(alpha = 0.76f),
+                    0.78f to background.copy(alpha = 0.26f),
                     1f to background.copy(alpha = 0f),
                 ),
             ),
@@ -10864,16 +10883,10 @@ private fun SearchScreen(
     }
     var searchHeaderHeight by remember { mutableStateOf(0.dp) }
     val density = LocalDensity.current
-    val bottomNavSpace = 96.dp
-    val searchBarGap = 8.dp
-    val searchBarBottom = bottomNavSpace + searchBarGap
-    val searchFieldHeight = 44.dp
-    val imeBottom = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
-    val searchFieldBottom = maxOf(searchBarBottom, imeBottom + searchBarGap)
-    val listBottomInset = searchFieldBottom + searchFieldHeight + searchBarGap
+    val listBottomInset = 108.dp
 
     SideEffect {
-        searchBarOverlay.active = searchBarVisible
+        searchBarOverlay.active = false
         searchBarOverlay.mode = searchMode
         searchBarOverlay.onModeChange = { mode ->
             if (mode != searchMode) {
@@ -10891,7 +10904,7 @@ private fun SearchScreen(
         }
         searchBarOverlay.onSearch = { submitQuery(searchBarOverlay.queryInput) }
         searchBarOverlay.onClear = ::clearSearchResults
-        searchBarOverlay.bottomPadding = searchFieldBottom
+        searchBarOverlay.bottomPadding = 0.dp
     }
     DisposableEffect(Unit) {
         onDispose {
@@ -10907,8 +10920,7 @@ private fun SearchScreen(
         if (!hasLoginCookie) {
             Box(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .padding(bottom = listBottomInset),
+                    .fillMaxSize(),
                 contentAlignment = Alignment.Center,
             ) {
                 EmptyState(
