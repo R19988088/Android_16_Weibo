@@ -346,11 +346,6 @@ private enum class SearchWeiboSort(val label: String) {
     Realtime("实时"),
 }
 
-private enum class HomeTopModule(val label: String) {
-    Following("关注"),
-    Search("搜索"),
-}
-
 private fun storedSearchMode(value: String): SearchMode =
     when (value) {
         SearchSettingsStore.MODE_USER -> SearchMode.User
@@ -3739,7 +3734,7 @@ fun WeiboApp(
                 }
             val feedRefreshTopInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
             AnimatedVisibility(
-                visible = capsuleHint != null,
+                visible = capsuleHint != null && selectedTab != MainTab.Search,
                 enter = fadeIn(tween(220)) + slideInVertically(tween(220)) { fullHeight -> -fullHeight / 2 },
                 exit = fadeOut(tween(180)) + slideOutVertically(tween(180)) { fullHeight -> -fullHeight / 2 },
                 modifier = Modifier
@@ -3762,7 +3757,7 @@ fun WeiboApp(
                 }
             }
 
-            if (selectedItem == null && visitedUserId == null) {
+            if (selectedItem == null && visitedUserId == null && selectedTab != MainTab.Search) {
                 if (timelineMenuExpanded) {
                     Box(
                         modifier = Modifier
@@ -3871,17 +3866,23 @@ fun WeiboApp(
                 visitedUserId == null
             ) {
                 HomeTopModuleOverlay(
-                    selectedModule = if (selectedTab == MainTab.Search) HomeTopModule.Search else HomeTopModule.Following,
-                    onModuleSelected = { module ->
-                        when (module) {
-                            HomeTopModule.Following -> {
-                                if (selectedTab == MainTab.Feed) {
-                                    scope.launch { feedListState.animateScrollToTopFixed() }
-                                } else {
-                                    selectedTab = MainTab.Feed
-                                }
+                    query = searchBarOverlay.queryInput,
+                    onQueryChange = { searchBarOverlay.queryInput = it },
+                    onSearch = {
+                        val query = searchBarOverlay.queryInput.trim()
+                        if (query.isNotBlank()) {
+                            searchPendingQuery = query
+                            searchPendingMode = searchMode
+                        }
+                        if (selectedTab != MainTab.Search) {
+                            pushNavigation {
+                                selectedTab = MainTab.Search
                             }
-                            HomeTopModule.Search -> {
+                        }
+                    },
+                    onClick = {
+                        if (selectedTab != MainTab.Search) {
+                            pushNavigation {
                                 selectedTab = MainTab.Search
                             }
                         }
@@ -4239,15 +4240,13 @@ private fun FollowFeedScreen(
                 contentType = { "feed-card" },
             ) { item ->
                 val resolved = resolveFeedItem(item)
-                var cardBounds by remember(resolved.id) { mutableStateOf<Rect?>(null) }
                 FeedCard(
                     item = resolved,
-                    onClick = { onItemClick(resolved, cardBounds) },
-                    onBoundsChange = { cardBounds = it },
+                    onClick = { onItemClick(resolved, null) },
                     onMediaClick = onMediaClick,
                     emoticonMap = emoticonMap,
                     onUserClick = onUserClick,
-                    onRetweetClick = { retweeted -> onItemClick(retweeted, cardBounds) },
+                    onRetweetClick = { retweeted -> onItemClick(retweeted, null) },
                     isLongTextLoading = isLongTextLoading,
                     onLoadLongText = onLoadLongText,
                     onToggleLike = onToggleLike,
@@ -4685,7 +4684,6 @@ private fun FeedCard(
     showAuthorRow: Boolean = true,
     menuBackEnabled: Boolean = true,
     insetRounded: Boolean = false,
-    onBoundsChange: (Rect) -> Unit = {},
 ) {
     val resolvedEmoticonMap = resolveEmoticonMap(emoticonMap, item.collectEmoticons())
     var inlineImagePreview by remember(item.statusId) { mutableStateOf<List<FeedImage>?>(null) }
@@ -4782,11 +4780,7 @@ private fun FeedCard(
         }
     }
     Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .onGloballyPositioned { coordinates ->
-                onBoundsChange(coordinates.boundsInWindow())
-            },
+        modifier = Modifier.fillMaxWidth(),
     ) {
         if (insetRounded) {
             ElevatedCard(
@@ -10454,97 +10448,91 @@ private fun SearchCapsuleField(
 
 @Composable
 private fun HomeTopModuleOverlay(
-    selectedModule: HomeTopModule,
-    onModuleSelected: (HomeTopModule) -> Unit,
+    query: String,
+    onQueryChange: (String) -> Unit,
+    onSearch: () -> Unit,
+    onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val topInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-    val backdrop = LocalLiquidMenuBackdrop.current
     Box(modifier = modifier.fillMaxWidth()) {
         HomeTopProgressiveBlur(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(topInset + 124.dp),
         )
-        SurfaceLiquidCapsule(
+        HomeTopSearchBar(
+            value = query,
+            onValueChange = onQueryChange,
+            onSearch = onSearch,
+            onClick = onClick,
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .padding(top = topInset + 8.dp)
-                .widthIn(max = 220.dp)
-                .height(44.dp),
-            backdrop = backdrop,
-            pill = true,
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                HomeTopModule.entries.forEach { module ->
-                    HomeTopModuleButton(
-                        module = module,
-                        selected = module == selectedModule,
-                        onClick = { onModuleSelected(module) },
-                        backdrop = backdrop,
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-            }
-        }
+                .padding(horizontal = 16.dp),
+        )
     }
 }
 
 @Composable
-private fun HomeTopModuleButton(
-    module: HomeTopModule,
-    selected: Boolean,
+private fun HomeTopSearchBar(
+    value: String,
+    onValueChange: (String) -> Unit,
+    onSearch: () -> Unit,
     onClick: () -> Unit,
-    backdrop: Backdrop?,
     modifier: Modifier = Modifier,
 ) {
-    val textColor = if (selected) Color.White else HintCapsuleText
-    val content: @Composable BoxScope.() -> Unit = {
-        Text(
-            text = module.label,
-            style = MaterialTheme.typography.labelLarge,
-            color = textColor,
-            maxLines = 1,
-            modifier = Modifier.align(Alignment.Center),
-        )
-    }
-    val buttonModifier = modifier
-        .fillMaxHeight()
-        .clip(RoundedCornerShape(percent = 50))
-        .clickable(
-            indication = null,
-            interactionSource = remember { MutableInteractionSource() },
-            onClick = onClick,
-        )
-
-    if (selected && backdrop != null) {
-        TransparentLiquidCapsule(
-            backdrop = backdrop,
-            pill = true,
-            modifier = buttonModifier,
-            content = content,
-        )
-        return
-    }
-
-    Box(
+    val fieldTextStyle = MaterialTheme.typography.bodyMedium.copy(
+        color = HintCapsuleText,
+        fontSize = 15.sp,
+        lineHeight = 20.sp,
+    )
+    BasicTextField(
+        value = value,
+        onValueChange = onValueChange,
         modifier = modifier
-            .fillMaxHeight()
+            .fillMaxWidth()
+            .height(44.dp)
             .clip(RoundedCornerShape(percent = 50))
-            .background(if (selected) WeiboFollowOrange.copy(alpha = 0.88f) else Color.Transparent)
+            .background(Color.White.copy(alpha = 0.94f))
+            .border(0.5.dp, HintCapsuleBorderColor, RoundedCornerShape(percent = 50))
             .clickable(
                 indication = null,
                 interactionSource = remember { MutableInteractionSource() },
                 onClick = onClick,
-            ),
-        contentAlignment = Alignment.Center,
-        content = content,
+            )
+            .padding(horizontal = 16.dp),
+        textStyle = fieldTextStyle,
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+        keyboardActions = KeyboardActions(onSearch = { onSearch() }),
+        decorationBox = { innerTextField ->
+            Row(
+                modifier = Modifier.fillMaxSize(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_tab_search),
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                    tint = HintCapsulePlaceholder,
+                )
+                Box(
+                    modifier = Modifier.weight(1f),
+                    contentAlignment = Alignment.CenterStart,
+                ) {
+                    if (value.isEmpty()) {
+                        Text(
+                            text = "搜索微博、话题和用户",
+                            style = fieldTextStyle.copy(color = HintCapsulePlaceholder),
+                            maxLines = 1,
+                        )
+                    }
+                    innerTextField()
+                }
+            }
+        },
     )
 }
 
