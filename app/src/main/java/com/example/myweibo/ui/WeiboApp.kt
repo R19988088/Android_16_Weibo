@@ -3552,6 +3552,8 @@ fun WeiboApp(
                                     backgroundPlaybackEnabled = enabled
                                     playbackSettingsStore.writeBackgroundPlaybackEnabled(enabled)
                                 },
+                                themeMode = themeMode,
+                                onThemeModeChange = onThemeModeChange,
                                 feedThumbnailQuality = feedThumbnailQuality,
                                 onFeedThumbnailQualityChange = { quality ->
                                     feedThumbnailQuality = quality
@@ -11290,6 +11292,8 @@ private fun MineScreen(
     onPendingOpenAccountLoginConsumed: () -> Unit = {},
     backgroundPlaybackEnabled: Boolean = false,
     onBackgroundPlaybackChange: (Boolean) -> Unit = {},
+    themeMode: AppThemeMode = AppThemeMode.Light,
+    onThemeModeChange: (AppThemeMode) -> Unit = {},
     feedThumbnailQuality: FeedThumbnailQuality = FeedThumbnailQuality.Medium,
     onFeedThumbnailQualityChange: (FeedThumbnailQuality) -> Unit = {},
     showFollowActions: Boolean = false,
