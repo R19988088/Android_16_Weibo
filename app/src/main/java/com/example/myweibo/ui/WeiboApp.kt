@@ -167,7 +167,11 @@ import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.foundation.border
+import dev.chrisbanes.haze.HazeProgressive
 import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.HazeStyle
+import dev.chrisbanes.haze.HazeTint
+import dev.chrisbanes.haze.hazeEffect
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 import androidx.compose.ui.draw.clipToBounds
@@ -342,6 +346,11 @@ private enum class SearchWeiboSort(val label: String) {
     Realtime("实时"),
 }
 
+private enum class HomeTopModule(val label: String) {
+    Following("关注"),
+    Search("搜索"),
+}
+
 private fun storedSearchMode(value: String): SearchMode =
     when (value) {
         SearchSettingsStore.MODE_USER -> SearchMode.User
@@ -463,6 +472,8 @@ private val FeedRefreshIndicatorColor = Color(0xFF9E9E9E)
 private val FeedCardContentHorizontalPadding = 12.dp
 private val FeedCardSectionSpacing = 10.dp
 private val FeedCardItemSpacing = 8.dp
+private val HomeTopModuleHeight = 52.dp
+private val HomeTopModuleBottomGap = 12.dp
 private const val SingleImageMaxHeightToWidth = 0.7f
 private const val SingleImageMaxWidthFraction = 0.7f
 private const val VideoMaxHeightToWidth = 1f
@@ -3306,6 +3317,7 @@ fun WeiboApp(
                             onToggleLike = ::toggleStatusLike,
                             onLikeClick = ::openLikeUsers,
                             onUrlEntityClick = ::openUrlEntity,
+                            topContentPadding = HomeTopModuleHeight + HomeTopModuleBottomGap,
                         )
                     }
                 }
@@ -3717,6 +3729,25 @@ fun WeiboApp(
                         .fillMaxWidth()
                         .padding(start = 18.dp, end = 18.dp, bottom = searchBarOverlay.bottomPadding)
                         .zIndex(85f),
+                )
+            }
+
+            if (selectedTab == MainTab.Feed && selectedItem == null && visitedUserId == null) {
+                HomeTopModuleOverlay(
+                    selectedModule = HomeTopModule.Following,
+                    onModuleSelected = { module ->
+                        when (module) {
+                            HomeTopModule.Following -> {
+                                scope.launch { feedListState.animateScrollToTopFixed() }
+                            }
+                            HomeTopModule.Search -> {
+                                selectedTab = MainTab.Search
+                            }
+                        }
+                    },
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .zIndex(82f),
                 )
             }
 
@@ -4142,6 +4173,7 @@ private fun FollowFeedScreen(
     onLikeClick: ((FeedItem, Rect) -> Unit)? = null,
     onUrlEntityClick: ((FeedUrlEntity) -> Unit)? = null,
     feedUiOnTop: Boolean = true,
+    topContentPadding: Dp = 0.dp,
 ) {
     val topInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
 
@@ -4169,10 +4201,10 @@ private fun FollowFeedScreen(
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(top = topInset + 12.dp, bottom = 24.dp),
+            contentPadding = PaddingValues(top = topInset + 12.dp + topContentPadding, bottom = 24.dp),
         ) {
             if (!cacheLoaded) {
-                item {
+                item(contentType = "feed-loading") {
                     Box(
                         modifier = Modifier.fillMaxWidth().padding(32.dp),
                         contentAlignment = Alignment.Center,
@@ -4181,7 +4213,7 @@ private fun FollowFeedScreen(
                     }
                 }
             } else if (items.isEmpty() && !isLoading) {
-                item {
+                item(contentType = "feed-empty") {
                     EmptyState(
                         title = if (hasLoginCookie) "\u6682\u65E0\u672C\u5730\u7F13\u5B58" else "\u9700\u8981\u767B\u5F55\u5FAE\u535A",
                         body = if (hasLoginCookie) {
@@ -4201,7 +4233,11 @@ private fun FollowFeedScreen(
                 }
             }
 
-            items(items, key = { it.id }) { item ->
+            items(
+                items = items,
+                key = { it.id },
+                contentType = { "feed-card" },
+            ) { item ->
                 val resolved = resolveFeedItem(item)
                 var cardBounds by remember(resolved.id) { mutableStateOf<Rect?>(null) }
                 FeedCard(
@@ -4225,7 +4261,7 @@ private fun FollowFeedScreen(
             }
 
             if (isLoading && items.isNotEmpty()) {
-                item {
+                item(contentType = "feed-loading-more") {
                     Box(
                         modifier = Modifier.fillMaxWidth().padding(20.dp),
                         contentAlignment = Alignment.Center,
@@ -10413,6 +10449,114 @@ private fun SearchCapsuleField(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun HomeTopModuleOverlay(
+    selectedModule: HomeTopModule,
+    onModuleSelected: (HomeTopModule) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val topInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    Box(modifier = modifier.fillMaxWidth()) {
+        HomeTopProgressiveBlur(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(topInset + 96.dp),
+        )
+        SurfaceLiquidCapsule(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = topInset + 8.dp)
+                .widthIn(max = 220.dp)
+                .height(44.dp),
+            pill = true,
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                HomeTopModule.entries.forEach { module ->
+                    HomeTopModuleButton(
+                        module = module,
+                        selected = module == selectedModule,
+                        onClick = { onModuleSelected(module) },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HomeTopModuleButton(
+    module: HomeTopModule,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val selectedColor = if (selected) WeiboFollowOrange else Color.Transparent
+    val textColor = if (selected) Color.White else HintCapsuleText
+    Box(
+        modifier = modifier
+            .fillMaxHeight()
+            .clip(RoundedCornerShape(percent = 50))
+            .background(selectedColor)
+            .clickable(
+                indication = null,
+                interactionSource = remember { MutableInteractionSource() },
+                onClick = onClick,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = module.label,
+            style = MaterialTheme.typography.labelLarge,
+            color = textColor,
+            maxLines = 1,
+        )
+    }
+}
+
+@Composable
+private fun HomeTopProgressiveBlur(
+    modifier: Modifier = Modifier,
+) {
+    val hazeState = LocalHazeState.current
+    val background = MaterialTheme.colorScheme.background
+    if (hazeState != null) {
+        Box(
+            modifier = modifier
+                .hazeEffect(
+                    state = hazeState,
+                    style = HazeStyle(
+                        blurRadius = 24.dp,
+                        backgroundColor = background,
+                        tint = HazeTint(background.copy(alpha = 0.42f)),
+                    ),
+                ) {
+                    progressive = HazeProgressive.verticalGradient(
+                        startIntensity = 1f,
+                        endIntensity = 0f,
+                        preferPerformance = true,
+                    )
+                },
+        )
+    } else {
+        Box(
+            modifier = modifier.background(
+                Brush.verticalGradient(
+                    0f to background.copy(alpha = 0.92f),
+                    0.7f to background.copy(alpha = 0.58f),
+                    1f to background.copy(alpha = 0f),
+                ),
+            ),
+        )
     }
 }
 
