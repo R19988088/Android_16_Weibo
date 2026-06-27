@@ -2171,18 +2171,24 @@ fun WeiboApp(
             isLoading = true
             hasLoginCookie = session.hasLoginCookie()
             feedListState.animateScrollToTopFixed()
-            runCatching {
+            val result = runCatching {
                 val raw = session.loadTimelineRaw(timelineKind)
                 if (timelineKind == TimelineKind.Following) {
                     timelineCacheStore.writeFollowingTimeline(raw)
                 }
-                WeiboJsonParser.parseTimeline(raw)
+                withContext(Dispatchers.Default) {
+                    WeiboJsonParser.parseTimeline(raw)
+                }
             }
-                .onSuccess { page ->
-                    items = sortFeedTimelineItems(page.items)
+            if (result.isSuccess) {
+                val page = result.getOrThrow()
+                    val (sortedItems, discoveredEmoticons) = withContext(Dispatchers.Default) {
+                        sortFeedTimelineItems(page.items) to page.items.collectAllEmoticons()
+                    }
+                    items = sortedItems
                     reconcileFeedLikeState(page.items)
                     nextCursor = page.nextCursor
-                    absorbDiscoveredEmoticons(page.items.collectAllEmoticons())
+                    absorbDiscoveredEmoticons(discoveredEmoticons)
                     hasLoginCookie = true
                     persistLoginSession()
                     if (page.items.isEmpty()) {
@@ -2191,8 +2197,8 @@ fun WeiboApp(
                     } else {
                         feedRefreshHint = feedRefreshHintMessage(previousItems, page.items)
                     }
-                }
-                .onFailure { error ->
+            } else {
+                val error = result.exceptionOrNull() ?: Exception("unknown")
                     feedRefreshHint = null
                     if (isLoginStateFailure(error)) {
                         hasLoginCookie = false
@@ -2202,7 +2208,7 @@ fun WeiboApp(
                         mineHasLoginCookie = hasLoginCookie
                     }
                     showMessage("同步失败", error.message ?: "请确认已登录 weibo.com")
-                }
+            }
             isLoading = false
             feedListState.animateScrollToTopFixed()
         }
@@ -2214,18 +2220,24 @@ fun WeiboApp(
             feedListState.animateScrollToTopFixed()
             isLoading = true
             hasLoginCookie = session.hasLoginCookie()
-            runCatching {
+            val result = runCatching {
                 val raw = session.loadTimelineRaw(timelineKind)
                 if (timelineKind == TimelineKind.Following) {
                     timelineCacheStore.writeFollowingTimeline(raw)
                 }
-                WeiboJsonParser.parseTimeline(raw)
+                withContext(Dispatchers.Default) {
+                    WeiboJsonParser.parseTimeline(raw)
+                }
             }
-                .onSuccess { page ->
-                    items = sortFeedTimelineItems(page.items)
+            if (result.isSuccess) {
+                val page = result.getOrThrow()
+                    val (sortedItems, discoveredEmoticons) = withContext(Dispatchers.Default) {
+                        sortFeedTimelineItems(page.items) to page.items.collectAllEmoticons()
+                    }
+                    items = sortedItems
                     reconcileFeedLikeState(page.items)
                     nextCursor = page.nextCursor
-                    absorbDiscoveredEmoticons(page.items.collectAllEmoticons())
+                    absorbDiscoveredEmoticons(discoveredEmoticons)
                     hasLoginCookie = true
                     persistLoginSession()
                     if (page.items.isEmpty()) {
@@ -2234,8 +2246,8 @@ fun WeiboApp(
                     } else {
                         feedRefreshHint = feedRefreshHintMessage(previousItems, page.items)
                     }
-                }
-                .onFailure { error ->
+            } else {
+                val error = result.exceptionOrNull() ?: Exception("unknown")
                     feedRefreshHint = null
                     if (isLoginStateFailure(error)) {
                         hasLoginCookie = false
@@ -2245,7 +2257,7 @@ fun WeiboApp(
                         mineHasLoginCookie = hasLoginCookie
                     }
                     showMessage("同步失败", error.message ?: "请确认已登录 weibo.com")
-                }
+            }
             isLoading = false
             feedListState.animateScrollToTopFixed()
         }
@@ -2265,19 +2277,31 @@ fun WeiboApp(
         if (feedLoadingMore || isLoading) return
         scope.launch {
             feedLoadingMore = true
-            runCatching { session.loadTimeline(timelineKind, cursor) }
-                .onSuccess { page ->
-                    val (merged, appended) = mergeFeedTimelinePages(items, page.items)
+            val result = runCatching {
+                val raw = session.loadTimelineRaw(timelineKind, cursor)
+                withContext(Dispatchers.Default) {
+                    WeiboJsonParser.parseTimeline(raw)
+                }
+            }
+            if (result.isSuccess) {
+                val page = result.getOrThrow()
+                    val currentItems = items
+                    val (merged, appended, discoveredEmoticons) = withContext(Dispatchers.Default) {
+                        val (mergedItems, appendedCount) = mergeFeedTimelinePages(currentItems, page.items)
+                        Triple(mergedItems, appendedCount, page.items.collectAllEmoticons())
+                    }
                     items = merged
                     reconcileFeedLikeState(page.items)
-                    absorbDiscoveredEmoticons(page.items.collectAllEmoticons())
+                    absorbDiscoveredEmoticons(discoveredEmoticons)
                     nextCursor = when {
                         page.items.isEmpty() -> null
                         appended == 0 -> null
                         else -> page.nextCursor ?: page.items.lastOrNull()?.id
                     }
-                }
-                .onFailure { error -> showMessage("\u52A0\u8F7D\u5931\u8D25", error.message ?: "\u65E0\u6CD5\u8BFB\u53D6\u4E0B\u4E00\u9875") }
+            } else {
+                val error = result.exceptionOrNull()
+                showMessage("\u52A0\u8F7D\u5931\u8D25", error?.message ?: "\u65E0\u6CD5\u8BFB\u53D6\u4E0B\u4E00\u9875")
+            }
             feedLoadingMore = false
         }
     }
@@ -3031,9 +3055,12 @@ fun WeiboApp(
         emoticonMap = emoticonCacheStore.read()
         recentCommentEmoticons = emoticonCacheStore.readRecent().filter { it in emoticonMap }
         timelineCacheStore.readFollowingTimeline()?.let { page ->
-            items = sortFeedTimelineItems(page.items)
+            val (sortedItems, discoveredEmoticons) = withContext(Dispatchers.Default) {
+                sortFeedTimelineItems(page.items) to page.items.collectAllEmoticons()
+            }
+            items = sortedItems
             nextCursor = page.nextCursor
-            absorbDiscoveredEmoticons(page.items.collectAllEmoticons())
+            absorbDiscoveredEmoticons(discoveredEmoticons)
         }
         mineCacheStore.readProfile()?.let { profile ->
             mineProfile = profile
@@ -4205,7 +4232,7 @@ private fun FollowFeedScreen(
             }
         }
 
-        LaunchedEffect(shouldLoadMore) {
+        LaunchedEffect(listState) {
             snapshotFlow { shouldLoadMore }
                 .distinctUntilChanged()
                 .filter { it }
@@ -4698,7 +4725,12 @@ private fun FeedCard(
     menuBackEnabled: Boolean = true,
     insetRounded: Boolean = false,
 ) {
-    val resolvedEmoticonMap = resolveEmoticonMap(emoticonMap, item.collectEmoticons())
+    val itemEmoticons = remember(item.id, item.statusId, item.emoticons, item.retweetedStatus) {
+        item.collectEmoticons()
+    }
+    val resolvedEmoticonMap = remember(emoticonMap, itemEmoticons) {
+        resolveEmoticonMap(emoticonMap, itemEmoticons)
+    }
     var inlineImagePreview by remember(item.statusId) { mutableStateOf<List<FeedImage>?>(null) }
     val contentVerticalPadding = when {
         insetRounded -> 14.dp
@@ -4881,7 +4913,12 @@ private fun QuotedStatus(
     onUrlEntityClick: ((FeedUrlEntity) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
-    val resolvedMap = resolveEmoticonMap(emoticonMap, item.collectEmoticons())
+    val itemEmoticons = remember(item.id, item.statusId, item.emoticons, item.retweetedStatus) {
+        item.collectEmoticons()
+    }
+    val resolvedMap = remember(emoticonMap, itemEmoticons) {
+        resolveEmoticonMap(emoticonMap, itemEmoticons)
+    }
     val userTarget = item.authorId.takeIf { it.isNotBlank() } ?: item.authorName
     ElevatedCard(
         modifier = modifier
