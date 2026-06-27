@@ -142,7 +142,7 @@ internal fun WeiboLiquidBottomBar(
                             backdrop = backdrop,
                             tabsCount = tabs.size,
                             feedTabIndex = feedIndex,
-                            lensScale = 3f,
+                            lensScale = 2f,
                             onTabLongPress = { onTimelineMenuExpandedChange(true) },
                             modifier = Modifier.fillMaxWidth(),
                         ) {
@@ -196,7 +196,7 @@ internal fun WeiboLiquidBottomBar(
                             onDoubleClick = onCollapsedTap,
                             backdrop = backdrop,
                             isInteractive = collapsedOnTop && collapsedAlpha > 0.5f,
-                            lensScale = 3f,
+                            lensScale = 2f,
                             modifier = Modifier.fillMaxSize(),
                         ) {
                             WeiboTabIcon(
@@ -212,7 +212,7 @@ internal fun WeiboLiquidBottomBar(
             SurfaceLiquidIconButton(
                 onClick = onComposeClick,
                 backdrop = backdrop,
-                lensScale = 3f,
+                lensScale = 2f,
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .size(composeButtonSize),

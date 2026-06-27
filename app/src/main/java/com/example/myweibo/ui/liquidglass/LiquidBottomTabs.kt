@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -86,9 +87,11 @@ fun LiquidBottomTabs(
         contentAlignment = Alignment.CenterStart
     ) {
         val density = LocalDensity.current
-        val tabWidth = with(density) {
-            (constraints.maxWidth.toFloat() - 8f.dp.toPx()) / tabsCount
-        }
+        val horizontalPaddingPx = with(density) { 4f.dp.toPx() }
+        val contentWidthPx = (constraints.maxWidth.toFloat() - horizontalPaddingPx * 2f)
+            .coerceAtLeast(0f)
+        val tabWidth = contentWidthPx / tabsCount
+        val tabWidthDp = with(density) { tabWidth.toDp() }
 
         val offsetAnimation = remember { Animatable(0f) }
         val panelOffset by remember(density) {
@@ -109,12 +112,12 @@ fun LiquidBottomTabs(
         val barWidthPx = constraints.maxWidth.toFloat()
 
         fun nearestTabIndex(position: Offset): Int {
-            val slotWidth = barWidthPx / tabsCount
+            val localX = (position.x - horizontalPaddingPx).fastCoerceIn(0f, contentWidthPx)
             var bestIndex = 0
             var bestDistance = Float.MAX_VALUE
             for (i in 0 until tabsCount) {
-                val centerX = slotWidth * (i + 0.5f)
-                val distance = abs(position.x - centerX)
+                val centerX = tabWidth * (i + 0.5f)
+                val distance = abs(localX - centerX)
                 if (distance < bestDistance) {
                     bestDistance = distance
                     bestIndex = i
@@ -229,13 +232,16 @@ fun LiquidBottomTabs(
                 }
         }
 
-        val interactiveHighlight = remember(animationScope) {
+        val interactiveHighlight = remember(animationScope, horizontalPaddingPx, tabWidth, isLtr) {
             InteractiveHighlight(
                 animationScope = animationScope,
                 position = { size, offset ->
                     Offset(
-                        if (isLtr) (dampedDragAnimation.value + 0.5f) * tabWidth + panelOffset
-                        else size.width - (dampedDragAnimation.value + 0.5f) * tabWidth + panelOffset,
+                        if (isLtr) {
+                            horizontalPaddingPx + (dampedDragAnimation.value + 0.5f) * tabWidth + panelOffset
+                        } else {
+                            size.width - horizontalPaddingPx - (dampedDragAnimation.value + 0.5f) * tabWidth + panelOffset
+                        },
                         size.height / 2f
                     )
                 }
@@ -318,12 +324,14 @@ fun LiquidBottomTabs(
 
         Box(
             Modifier
-                .padding(horizontal = 4f.dp)
                 .graphicsLayer {
                     clip = false
                     translationX =
-                        if (isLtr) dampedDragAnimation.value * tabWidth + panelOffset
-                        else size.width - (dampedDragAnimation.value + 1f) * tabWidth + panelOffset
+                        if (isLtr) {
+                            horizontalPaddingPx + dampedDragAnimation.value * tabWidth + panelOffset
+                        } else {
+                            barWidthPx - horizontalPaddingPx - (dampedDragAnimation.value + 1f) * tabWidth + panelOffset
+                        }
                 }
                 .drawBackdrop(
                     backdrop = rememberCombinedBackdrop(backdrop, tabsBackdrop),
@@ -369,21 +377,22 @@ fun LiquidBottomTabs(
                     }
                 )
                 .height(56f.dp)
-                .fillMaxWidth(1f / tabsCount)
+                .width(tabWidthDp)
         )
 
         Box(
             Modifier
                 .matchParentSize()
-                .pointerInput(feedTabIndex, barWidthPx, tabsCount, isLtr) {
+                .pointerInput(feedTabIndex, horizontalPaddingPx, contentWidthPx, tabWidth, tabsCount, isLtr) {
                     detectTapGestures(
                         onLongPress = { offset ->
-                            val slotWidth = barWidthPx / tabsCount
+                            val localX = (offset.x - horizontalPaddingPx)
+                                .fastCoerceIn(0f, contentWidthPx)
                             var bestIndex = 0
                             var bestDistance = Float.MAX_VALUE
                             for (i in 0 until tabsCount) {
-                                val centerX = slotWidth * (i + 0.5f)
-                                val distance = kotlin.math.abs(offset.x - centerX)
+                                val centerX = tabWidth * (i + 0.5f)
+                                val distance = kotlin.math.abs(localX - centerX)
                                 if (distance < bestDistance) {
                                     bestDistance = distance
                                     bestIndex = i
