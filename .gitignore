@@ -38,6 +38,8 @@ local.properties
 # Signing (keep keystore.properties.example in repo)
 keystore.properties
 keystore/
+!app/keystore/
+!app/keystore/myweibo-fixed.p12
 *.jks
 *.keystore
 

@@ -55,8 +55,9 @@ app/src/main/java/com/example/myweibo/
 
 ### Release
 
-1. 复制 `keystore.properties.example` 为 `keystore.properties` 并填写签名信息
-2. 执行：
+默认使用仓库内固定签名，可直接覆盖安装升级。若需要自定义签名，复制 `keystore.properties.example` 为 `keystore.properties` 并填写签名信息。
+
+执行：
 
 ```bash
 ./gradlew :app:assembleRelease
@@ -68,7 +69,7 @@ app/src/main/java/com/example/myweibo/
 
 - `minSdk` / `targetSdk`：36
 - JDK 11+
-- Release 签名文件需自行配置，未配置时 Release 包不可直接安装覆盖 Debug 包
+- 默认 Debug / Release 均使用固定签名；配置 `keystore.properties` 后 Release 会改用自定义签名
 
 ## 使用说明
 

@@ -248,6 +248,7 @@ import com.example.myweibo.data.CommentItem
 import com.example.myweibo.data.CommentSort
 import com.example.myweibo.data.CommentSortStore
 import com.example.myweibo.data.EmoticonCacheStore
+import com.example.myweibo.data.AppThemeMode
 import com.example.myweibo.data.MentionSuggestionCacheStore
 import com.example.myweibo.data.SearchSettingsStore
 import com.example.myweibo.data.MentionCandidate
@@ -1224,6 +1225,18 @@ private fun profileAvatarFeedImage(avatarUrl: String?): FeedImage? {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WeiboApp() {
+    WeiboApp(
+        themeMode = AppThemeMode.Light,
+        onThemeModeChange = {},
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun WeiboApp(
+    themeMode: AppThemeMode,
+    onThemeModeChange: (AppThemeMode) -> Unit,
+) {
     val context = LocalContext.current
     val session = remember { WeiboWebSession(context) }
     val timelineCacheStore = remember { TimelineCacheStore(context) }
@@ -1250,8 +1263,7 @@ fun WeiboApp() {
     val profileHeaderHeights = remember { mutableStateMapOf<String, Dp>() }
 
     var selectedTab by remember { mutableStateOf(MainTab.Feed) }
-    var bottomBarExpanded by remember { mutableStateOf(true) }
-    var bottomBarAwaitingOutsideDismiss by remember { mutableStateOf(false) }
+    val bottomBarExpanded = true
     var minePagerPage by remember { mutableStateOf(0) }
     var visitedMinePagerPage by remember { mutableStateOf(0) }
     var feedRefreshHint by remember { mutableStateOf<String?>(null) }
@@ -1991,7 +2003,6 @@ fun WeiboApp() {
         if (selectedTab == MainTab.Search && visitedUserId == null && selectedItem == null) {
             searchPendingQuery = normalized
             searchPendingMode = SearchMode.Weibo
-            bottomBarExpanded = true
             return
         }
         pushNavigation {
@@ -2005,7 +2016,6 @@ fun WeiboApp() {
             searchPendingQuery = normalized
             searchPendingMode = SearchMode.Weibo
             selectedTab = MainTab.Search
-            bottomBarExpanded = true
         }
     }
 
@@ -3095,38 +3105,6 @@ fun WeiboApp() {
         }
     }
 
-    val bottomBarListState: LazyListState? = when {
-        selectedItem != null -> null
-        visitedUserId != null -> null
-        selectedTab == MainTab.Mine -> {
-            if (minePagerPage == 0) minePostsListState else mineAlbumListState
-        }
-        selectedTab == MainTab.Feed -> feedListState
-        else -> null
-    }
-
-    LaunchedEffect(selectedTab, visitedUserId) {
-        if (selectedTab != MainTab.Messages && selectedTab != MainTab.Compose) {
-            bottomBarExpanded = true
-        }
-        bottomBarAwaitingOutsideDismiss = false
-    }
-
-    LaunchedEffect(bottomBarListState) {
-        val state = bottomBarListState ?: return@LaunchedEffect
-        var lastScrollTotal =
-            state.firstVisibleItemIndex * 10_000 + state.firstVisibleItemScrollOffset
-        snapshotFlow {
-            state.firstVisibleItemIndex * 10_000 + state.firstVisibleItemScrollOffset
-        }.collect { scrollTotal ->
-            if (scrollTotal > lastScrollTotal + 12) {
-                bottomBarExpanded = false
-                bottomBarAwaitingOutsideDismiss = false
-            }
-            lastScrollTotal = scrollTotal
-        }
-    }
-
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner, backgroundPlaybackEnabled) {
         val observer = LifecycleEventObserver { _, event ->
@@ -3790,33 +3768,13 @@ fun WeiboApp() {
                             ),
                     )
                 }
-                if (bottomBarExpanded && bottomBarAwaitingOutsideDismiss) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .zIndex(40f)
-                            .clickable(
-                                indication = null,
-                                interactionSource = remember { MutableInteractionSource() },
-                                onClick = {
-                                    bottomBarExpanded = false
-                                    bottomBarAwaitingOutsideDismiss = false
-                                },
-                            ),
-                    )
-                }
                 WeiboLiquidBottomBar(
                     selectedTab = selectedTab,
                     expanded = bottomBarExpanded,
                     backdrop = bottomBarBackdrop,
                     timelineMenuExpanded = timelineMenuExpanded,
                     onTimelineMenuExpandedChange = { timelineMenuExpanded = it },
-                    onExpandRequest = {
-                        if (!bottomBarExpanded) {
-                            bottomBarAwaitingOutsideDismiss = true
-                        }
-                        bottomBarExpanded = true
-                    },
+                    onExpandRequest = {},
                     onCollapsedTap = {
                         when (selectedTab) {
                             MainTab.Feed -> refreshTimelineFromTop()
@@ -3855,6 +3813,12 @@ fun WeiboApp() {
                             }
                             selectedTab = tab
                         }
+                    },
+                    onComposeClick = {
+                        if (selectedTab != MainTab.Compose) {
+                            dismissFollowListForTabSwitch()
+                        }
+                        selectedTab = MainTab.Compose
                     },
                     timelineMenuContent = { dismiss ->
                         ImageActionFrostedCard(modifier = Modifier.width(136.dp)) {
@@ -11431,6 +11395,8 @@ private fun MineScreen(
                 emoticonSyncing = emoticonSyncing,
                 backgroundPlaybackEnabled = backgroundPlaybackEnabled,
                 onBackgroundPlaybackChange = onBackgroundPlaybackChange,
+                themeMode = themeMode,
+                onThemeModeChange = onThemeModeChange,
                 feedThumbnailQuality = feedThumbnailQuality,
                 onFeedThumbnailQualityChange = onFeedThumbnailQualityChange,
                 onBack = {
@@ -11878,6 +11844,8 @@ private fun SettingsScreen(
     emoticonSyncing: Boolean,
     backgroundPlaybackEnabled: Boolean,
     onBackgroundPlaybackChange: (Boolean) -> Unit,
+    themeMode: AppThemeMode,
+    onThemeModeChange: (AppThemeMode) -> Unit,
     feedThumbnailQuality: FeedThumbnailQuality,
     onFeedThumbnailQualityChange: (FeedThumbnailQuality) -> Unit,
     onBack: () -> Unit,
@@ -11939,6 +11907,12 @@ private fun SettingsScreen(
                     )
                 }
                 item {
+                    SettingsAppearanceCard(
+                        themeMode = themeMode,
+                        onThemeModeChange = onThemeModeChange,
+                    )
+                }
+                item {
                     SettingsImageCard(
                         expanded = imageExpanded,
                         onExpandedChange = { imageExpanded = it },
@@ -11980,11 +11954,9 @@ private val appHelpSections = listOf(
     HelpSection(
         title = "底部导航",
         items = listOf(
-            "底部共有五个入口：首页、消息、搜索、写微博、我的。",
-            "向下滚动列表时，底部栏会自动收起到左侧小胶囊；单击小胶囊可展开。",
-            "展开后点击空白区域可再次收起；点击其他 Tab 时选中块会滑向目标位置。",
-            "在小胶囊上长按并左右拖动，可快速切换 Tab；松手后停留在目标页。",
-            "双击小胶囊：在首页刷新信息流；在「我的」回到顶部并刷新资料。",
+            "底部主导航包含首页、消息、搜索、我的；右侧独立按钮用于写微博。",
+            "底部导航固定展开，不会随列表滚动收起。",
+            "点击其他 Tab 时选中块会滑向目标位置。",
             "再次点击当前选中的「首页」，也会从顶部刷新关注流。",
             "长按底部「首页」按钮，可在「最新微博」与「朋友圈」之间切换。",
             "在「消息」「写微博」页按系统返回键，优先网页内后退；无法后退时留在当前页。",
@@ -12324,6 +12296,62 @@ private fun SettingsImageCard(
                                 )
                             }
                         }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsAppearanceCard(
+    themeMode: AppThemeMode,
+    onThemeModeChange: (AppThemeMode) -> Unit,
+) {
+    SettingsPlainCard {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text(
+                text = "外观模式",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = "忽略系统自动切换，默认使用浅色模式",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            AppThemeMode.entries.forEach { option ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable { onThemeModeChange(option) }
+                        .padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    RadioButton(
+                        selected = themeMode == option,
+                        onClick = { onThemeModeChange(option) },
+                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            text = option.label,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = if (themeMode == option) FontWeight.SemiBold else FontWeight.Normal,
+                        )
+                        Text(
+                            text = option.description,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                 }
             }

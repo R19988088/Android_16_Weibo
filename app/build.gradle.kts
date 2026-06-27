@@ -12,6 +12,8 @@ if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 }
 
+val fixedKeystoreFile = rootProject.file("app/keystore/myweibo-fixed.p12")
+
 android {
     namespace = "com.example.myweibo"
     compileSdk {
@@ -31,6 +33,13 @@ android {
     }
 
     signingConfigs {
+        create("fixed") {
+            keyAlias = "myweibo"
+            keyPassword = "myweibo_fixed_key_2026"
+            storeFile = fixedKeystoreFile
+            storePassword = "myweibo_fixed_key_2026"
+            storeType = "pkcs12"
+        }
         if (keystorePropertiesFile.exists()) {
             create("release") {
                 keyAlias = keystoreProperties.getProperty("keyAlias")
@@ -42,10 +51,13 @@ android {
     }
 
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("fixed")
+        }
         release {
-            if (keystorePropertiesFile.exists()) {
-                signingConfig = signingConfigs.getByName("release")
-            }
+            signingConfig = signingConfigs.getByName(
+                if (keystorePropertiesFile.exists()) "release" else "fixed",
+            )
             optimization {
                 enable = false
             }

@@ -4,6 +4,12 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import com.example.myweibo.data.AppearanceSettingsStore
+import com.example.myweibo.data.AppThemeMode
 import com.example.myweibo.ui.WeiboApp
 import com.example.myweibo.ui.theme.MyWeiboTheme
 import java.net.CookieHandler
@@ -44,8 +50,16 @@ class MainActivity : ComponentActivity() {
 
         enableEdgeToEdge()
         setContent {
-            MyWeiboTheme {
-                WeiboApp()
+            val appearanceSettingsStore = remember { AppearanceSettingsStore(this@MainActivity) }
+            var themeMode by remember { mutableStateOf(appearanceSettingsStore.readThemeMode()) }
+            MyWeiboTheme(darkTheme = themeMode == AppThemeMode.Dark) {
+                WeiboApp(
+                    themeMode = themeMode,
+                    onThemeModeChange = { mode ->
+                        themeMode = mode
+                        appearanceSettingsStore.writeThemeMode(mode)
+                    },
+                )
             }
         }
     }

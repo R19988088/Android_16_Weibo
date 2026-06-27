@@ -6,4 +6,9 @@ internal enum class MainTab(val label: String) {
     Search("搜索"),
     Compose("写微博"),
     Mine("我的"),
+    ;
+
+    companion object {
+        val primaryTabs = listOf(Feed, Messages, Search, Mine)
+    }
 }

@@ -1,11 +1,9 @@
 package com.example.myweibo.ui
 
 import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateDp
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.updateTransition
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
@@ -17,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -28,6 +27,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -61,17 +61,17 @@ internal fun WeiboLiquidBottomBar(
     feedTabLabel: String = MainTab.Feed.label,
     selectedTimelineKind: TimelineKind = TimelineKind.Following,
     onTimelineKindChange: (TimelineKind) -> Unit = {},
+    onComposeClick: () -> Unit,
     timelineMenuContent: @Composable (dismiss: () -> Unit) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val isLightTheme = !isSystemInDarkTheme()
+    val isLightTheme = MaterialTheme.colorScheme.background.luminance() > 0.5f
     val accentColor = if (isLightTheme) TabAccentLight else TabAccentDark
     val unselectedColor = Color.Black
     val density = LocalDensity.current
-    val collapsedSize = 64.dp
     val barHeight = 64.dp
     val animationOverflow = 12.dp
-    val tabs = MainTab.entries
+    val tabs = MainTab.primaryTabs
     val selectedIndex = tabs.indexOf(selectedTab).coerceAtLeast(0)
     val feedIndex = tabs.indexOf(MainTab.Feed).coerceAtLeast(0)
     var tabsMounted by remember { mutableStateOf(expanded) }
@@ -79,10 +79,6 @@ internal fun WeiboLiquidBottomBar(
         tabsMounted = true
     }
 
-    val widthSpring = spring<Dp>(
-        dampingRatio = Spring.DampingRatioLowBouncy,
-        stiffness = 980f,
-    )
     val contentSpring = spring<Float>(
         dampingRatio = Spring.DampingRatioLowBouncy,
         stiffness = 1050f,
@@ -95,16 +91,11 @@ internal fun WeiboLiquidBottomBar(
             .navigationBarsPadding(),
         contentAlignment = Alignment.BottomStart,
     ) {
-        val fullBarWidth = maxWidth
+        val composeButtonSize = 64.dp
+        val composeButtonGap = 12.dp
+        val fullBarWidth = (maxWidth - composeButtonSize - composeButtonGap).coerceAtLeast(0.dp)
         val transition = updateTransition(targetState = expanded, label = "bottom-bar-expansion")
         val isMorphing = transition.isRunning
-
-        val barWidth by transition.animateDp(
-            transitionSpec = { widthSpring },
-            label = "bar-width",
-        ) { isExpanded ->
-            if (isExpanded) fullBarWidth else collapsedSize
-        }
 
         val expandedAlpha by transition.animateFloat(
             transitionSpec = { contentSpring },
@@ -121,11 +112,11 @@ internal fun WeiboLiquidBottomBar(
         val morphScaleY = 1f - morphT * 0.02f + bounceOvershoot * 0.06f
         val collapsedOnTop = revealAlpha < 0.5f
 
-        BoxWithConstraints(Modifier.width(fullBarWidth).height(barHeight + animationOverflow)) {
+        BoxWithConstraints(Modifier.fillMaxWidth().height(barHeight + animationOverflow)) {
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomStart)
-                    .width(barWidth)
+                    .width(fullBarWidth)
                     .height(barHeight)
                     .graphicsLayer {
                         clip = false
@@ -214,6 +205,20 @@ internal fun WeiboLiquidBottomBar(
                         }
                     }
                 }
+            }
+
+            SurfaceLiquidIconButton(
+                onClick = onComposeClick,
+                backdrop = backdrop,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .size(composeButtonSize),
+            ) {
+                WeiboTabIcon(
+                    tab = MainTab.Compose,
+                    color = if (selectedTab == MainTab.Compose) accentColor else unselectedColor,
+                    size = 24.dp,
+                )
             }
 
             if (timelineMenuExpanded) {
