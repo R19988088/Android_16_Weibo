@@ -59,6 +59,7 @@ fun LiquidButton(
     isInteractive: Boolean = true,
     tint: Color = Color.Unspecified,
     surfaceColor: Color = Color.Unspecified,
+    lensScale: Float = 1f,
     onDoubleClick: (() -> Unit)? = null,
     content: @Composable RowScope.() -> Unit,
 ) {
@@ -92,7 +93,7 @@ fun LiquidButton(
                 effects = {
                     vibrancy()
                     blur(2f.dp.toPx())
-                    lens(12f.dp.toPx(), 24f.dp.toPx())
+                    lens((12f * lensScale).dp.toPx(), (24f * lensScale).dp.toPx())
                 },
                 layerBlock = if (isInteractive) {
                     {
@@ -338,6 +339,7 @@ fun SurfaceLiquidIconButton(
     modifier: Modifier = Modifier,
     onDoubleClick: (() -> Unit)? = null,
     isInteractive: Boolean = true,
+    lensScale: Float = 1f,
     content: @Composable RowScope.() -> Unit,
 ) {
     LiquidButton(
@@ -346,6 +348,7 @@ fun SurfaceLiquidIconButton(
         modifier = modifier,
         onDoubleClick = onDoubleClick,
         isInteractive = isInteractive,
+        lensScale = lensScale,
         surfaceColor = liquidSurfaceColor(!isSystemInDarkTheme()),
         content = content,
     )

@@ -9,6 +9,6 @@ internal enum class MainTab(val label: String) {
     ;
 
     companion object {
-        val primaryTabs = listOf(Feed, Messages, Search, Mine)
+        val primaryTabs = listOf(Feed, Messages, Mine)
     }
 }

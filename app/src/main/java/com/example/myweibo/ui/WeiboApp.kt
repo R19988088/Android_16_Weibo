@@ -3192,6 +3192,18 @@ fun WeiboApp(
             var composeWebMounted by remember { mutableStateOf(false) }
             if (messagesWebVisible) messagesWebMounted = true
             if (composeWebVisible) composeWebMounted = true
+            LaunchedEffect(messagesWebVisible, messagesWebMounted) {
+                if (!messagesWebVisible && messagesWebMounted) {
+                    delay(NavTransitionDurationMs.toLong())
+                    messagesWebMounted = false
+                }
+            }
+            LaunchedEffect(composeWebVisible, composeWebMounted) {
+                if (!composeWebVisible && composeWebMounted) {
+                    delay(NavTransitionDurationMs.toLong())
+                    composeWebMounted = false
+                }
+            }
 
             if (messagesWebMounted) {
                 Box(
@@ -3711,6 +3723,7 @@ fun WeiboApp(
             }
 
             if (
+                selectedTab != MainTab.Search &&
                 selectedTab != MainTab.Mine &&
                 selectedTab != MainTab.Messages &&
                 selectedTab != MainTab.Compose &&

@@ -69,6 +69,7 @@ fun LiquidBottomTabs(
     modifier: Modifier = Modifier,
     gestureController: LiquidBottomTabsGestureController = rememberLiquidBottomTabsGestureController(),
     feedTabIndex: Int = 0,
+    lensScale: Float = 1f,
     onTabLongPress: (index: Int) -> Unit = {},
     content: @Composable RowScope.() -> Unit
 ) {
@@ -254,7 +255,7 @@ fun LiquidBottomTabs(
                     effects = {
                         vibrancy()
                         blur(2f.dp.toPx())
-                        lens(12f.dp.toPx(), 24f.dp.toPx())
+                        lens((12f * lensScale).dp.toPx(), (24f * lensScale).dp.toPx())
                     },
                     layerBlock = {
                         val progress = dampedDragAnimation.pressProgress
@@ -295,8 +296,8 @@ fun LiquidBottomTabs(
                             vibrancy()
                             blur(2f.dp.toPx())
                             lens(
-                                12f.dp.toPx() * progress.coerceAtLeast(0.01f),
-                                24f.dp.toPx() * progress.coerceAtLeast(0.01f),
+                                (12f * lensScale).dp.toPx() * progress.coerceAtLeast(0.01f),
+                                (24f * lensScale).dp.toPx() * progress.coerceAtLeast(0.01f),
                             )
                         },
                         highlight = {
@@ -330,8 +331,8 @@ fun LiquidBottomTabs(
                     effects = {
                         val progress = dampedDragAnimation.pressProgress
                         lens(
-                            10f.dp.toPx() * progress,
-                            14f.dp.toPx() * progress,
+                            (10f * lensScale).dp.toPx() * progress,
+                            (14f * lensScale).dp.toPx() * progress,
                             chromaticAberration = true
                         )
                     },
