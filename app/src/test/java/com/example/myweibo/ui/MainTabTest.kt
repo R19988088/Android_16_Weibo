@@ -6,11 +6,12 @@ import org.junit.Test
 
 class MainTabTest {
     @Test
-    fun primaryTabsExcludeCompose() {
+    fun primaryTabsExcludeSearchAndCompose() {
         assertEquals(
-            listOf(MainTab.Feed, MainTab.Messages, MainTab.Search, MainTab.Mine),
+            listOf(MainTab.Feed, MainTab.Messages, MainTab.Mine),
             MainTab.primaryTabs,
         )
+        assertFalse(MainTab.Search in MainTab.primaryTabs)
         assertFalse(MainTab.Compose in MainTab.primaryTabs)
     }
 }
