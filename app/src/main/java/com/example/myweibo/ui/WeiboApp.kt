@@ -3283,6 +3283,10 @@ fun WeiboApp(
                 albumViewerState == null &&
                 followListBelongsToCurrentContext
             val feedVisibleAlpha = if (feedUiOnTop) 1f else 0f
+            val homeTopModuleVisible =
+                (selectedTab == MainTab.Feed || selectedTab == MainTab.Search) &&
+                    selectedItem == null &&
+                    visitedUserId == null
 
             Box(Modifier.fillMaxSize()) {
                 if (selectedTab == MainTab.Feed && (feedUiOnTop || keepFeedAlive)) {
@@ -3384,6 +3388,11 @@ fun WeiboApp(
                             onLikeClick = ::openLikeUsers,
                             onUrlEntityClick = ::openUrlEntity,
                             onOpenLoginSettings = ::openAccountLoginManagement,
+                            topContentPadding = if (homeTopModuleVisible) {
+                                HomeTopModuleHeight + HomeTopModuleBottomGap
+                            } else {
+                                0.dp
+                            },
                             mineProfileId = mineProfile?.id,
                             searchMode = searchMode,
                             onSearchModeChange = { mode ->
@@ -3716,33 +3725,6 @@ fun WeiboApp(
             }
             }
 
-            if (
-                (selectedTab == MainTab.Feed || selectedTab == MainTab.Search) &&
-                selectedItem == null &&
-                visitedUserId == null
-            ) {
-                HomeTopModuleOverlay(
-                    selectedModule = if (selectedTab == MainTab.Search) HomeTopModule.Search else HomeTopModule.Following,
-                    onModuleSelected = { module ->
-                        when (module) {
-                            HomeTopModule.Following -> {
-                                if (selectedTab == MainTab.Feed) {
-                                    scope.launch { feedListState.animateScrollToTopFixed() }
-                                } else {
-                                    selectedTab = MainTab.Feed
-                                }
-                            }
-                            HomeTopModule.Search -> {
-                                selectedTab = MainTab.Search
-                            }
-                        }
-                    },
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .zIndex(82f),
-                )
-            }
-
             val capsuleHint = operationCapsuleHint
                 ?: albumFetchCapsuleHint
                 ?: if (
@@ -3882,6 +3864,32 @@ fun WeiboApp(
                 backdrop = bottomBarBackdrop,
             )
             }
+            }
+            if (
+                (selectedTab == MainTab.Feed || selectedTab == MainTab.Search) &&
+                selectedItem == null &&
+                visitedUserId == null
+            ) {
+                HomeTopModuleOverlay(
+                    selectedModule = if (selectedTab == MainTab.Search) HomeTopModule.Search else HomeTopModule.Following,
+                    onModuleSelected = { module ->
+                        when (module) {
+                            HomeTopModule.Following -> {
+                                if (selectedTab == MainTab.Feed) {
+                                    scope.launch { feedListState.animateScrollToTopFixed() }
+                                } else {
+                                    selectedTab = MainTab.Feed
+                                }
+                            }
+                            HomeTopModule.Search -> {
+                                selectedTab = MainTab.Search
+                            }
+                        }
+                    },
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .zIndex(82f),
+                )
             }
             imagePeekController.activeRequest?.let { request ->
                 ImageActionOverlay(
@@ -10456,7 +10464,7 @@ private fun HomeTopModuleOverlay(
         HomeTopProgressiveBlur(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(topInset + 96.dp),
+                .height(topInset + 124.dp),
         )
         SurfaceLiquidCapsule(
             modifier = Modifier
@@ -10545,17 +10553,18 @@ private fun HomeTopProgressiveBlur(
     modifier: Modifier = Modifier,
 ) {
     val hazeState = LocalHazeState.current
-    val background = MaterialTheme.colorScheme.background
+    val surface = MaterialTheme.colorScheme.surface
     if (hazeState != null) {
         Box(
             modifier = modifier
                 .clipToBounds()
+                .background(surface.copy(alpha = 0.10f))
                 .hazeEffect(
                     state = hazeState,
                     style = HazeStyle(
-                        backgroundColor = background,
-                        tint = HazeTint(background.copy(alpha = 0.34f)),
-                        blurRadius = 22.dp,
+                        backgroundColor = surface,
+                        tint = HazeTint(surface.copy(alpha = 0.42f)),
+                        blurRadius = 24.dp,
                     ),
                 ) {
                     progressive = HazeProgressive.verticalGradient(
@@ -10569,10 +10578,10 @@ private fun HomeTopProgressiveBlur(
         Box(
             modifier = modifier.background(
                 Brush.verticalGradient(
-                    0f to background.copy(alpha = 0.98f),
-                    0.42f to background.copy(alpha = 0.76f),
-                    0.78f to background.copy(alpha = 0.26f),
-                    1f to background.copy(alpha = 0f),
+                    0f to surface.copy(alpha = 0.92f),
+                    0.42f to surface.copy(alpha = 0.62f),
+                    0.78f to surface.copy(alpha = 0.18f),
+                    1f to surface.copy(alpha = 0f),
                 ),
             ),
         )
