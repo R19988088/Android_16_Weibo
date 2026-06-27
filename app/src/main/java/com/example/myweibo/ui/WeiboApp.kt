@@ -14635,9 +14635,9 @@ private fun AccountLoginPanel(
                 .fillMaxWidth()
                 .weight(1f),
             factory = {
-                session.webView.detachFromParent()
-                session.webView
+                session.webView.prepareVisibleSessionWebView()
             },
+            update = { it.prepareVisibleSessionWebView() },
         )
     }
 }
@@ -14668,9 +14668,9 @@ private fun AccountScreen(session: WeiboWebSession) {
         AndroidView(
             modifier = Modifier.fillMaxWidth().weight(1f),
             factory = {
-                session.webView.detachFromParent()
-                session.webView
+                session.webView.prepareVisibleSessionWebView()
             },
+            update = { it.prepareVisibleSessionWebView() },
         )
     }
 }
@@ -15176,6 +15176,18 @@ private fun EmptyState(
 
 private fun WebView.detachFromParent(): WebView {
     (parent as? ViewGroup)?.removeView(this)
+    return this
+}
+
+private fun WebView.prepareVisibleSessionWebView(): WebView {
+    detachFromParent()
+    layoutParams = ViewGroup.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT,
+        ViewGroup.LayoutParams.MATCH_PARENT,
+    )
+    visibility = View.VISIBLE
+    setLayerType(View.LAYER_TYPE_HARDWARE, null)
+    onResume()
     return this
 }
 
