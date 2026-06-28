@@ -307,6 +307,7 @@ import com.example.myweibo.ui.liquidglass.TransparentLiquidCapsule
 import com.example.myweibo.ui.liquidglass.TransparentLiquidIconButton
 import com.example.myweibo.ui.liquidglass.TransparentLiquidTextButton
 import com.kyant.backdrop.Backdrop
+import com.kyant.backdrop.backdrops.LayerBackdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import kotlinx.coroutines.CancellationException
@@ -553,7 +554,7 @@ private fun mainTabMotionMultiplier(
 @Composable
 private fun WebTabBottomGlassBackdropSource(
     visible: Boolean,
-    backdrop: Backdrop,
+    backdrop: LayerBackdrop,
 ) {
     if (!visible) return
     Box(
@@ -3380,7 +3381,6 @@ fun WeiboApp(
                 Box(
                     Modifier
                         .then(if (composeWebVisible) Modifier.fillMaxSize() else Modifier.size(1.dp))
-                        .then(if (composeWebVisible) Modifier.layerBackdrop(bottomBarBackdrop) else Modifier)
                         .graphicsLayer {
                             alpha = if (composeWebVisible) 1f else 0f
                             clip = true
