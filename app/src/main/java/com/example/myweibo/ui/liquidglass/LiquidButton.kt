@@ -2,6 +2,7 @@ package com.example.myweibo.ui.liquidglass
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -24,9 +25,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.isSpecified
@@ -53,6 +55,18 @@ import kotlin.math.tanh
 
 internal val LocalHazeState = staticCompositionLocalOf<HazeState?> { null }
 internal val LocalLiquidMenuBackdrop = staticCompositionLocalOf<Backdrop?> { null }
+
+internal val LiquidGlassStrokeColor = Color.Black.copy(alpha = 0.3f)
+
+internal fun DrawScope.drawLiquidGlassStroke() {
+    drawRect(
+        color = LiquidGlassStrokeColor,
+        style = Stroke(width = 1.dp.toPx()),
+    )
+}
+
+internal fun Modifier.drawLiquidGlassBorder(shape: Shape): Modifier =
+    border(1.dp, LiquidGlassStrokeColor, shape)
 
 @Composable
 fun LiquidButton(
@@ -134,11 +148,7 @@ fun LiquidButton(
                     if (surfaceColor.isSpecified) {
                         drawRect(surfaceColor)
                     }
-                    drawRoundRect(
-                        color = Color.Black.copy(alpha = 0.3f),
-                        cornerRadius = CornerRadius(size.height / 2f, size.height / 2f),
-                        style = Stroke(width = 1f),
-                    )
+                    drawLiquidGlassStroke()
                 },
             )
             .then(interactionModifier)
@@ -185,7 +195,10 @@ fun SurfaceLiquidCapsule(
                         blur(2f.dp.toPx())
                         lens(12f.dp.toPx(), 24f.dp.toPx())
                     },
-                    onDrawSurface = { drawRect(surfaceColor) },
+                    onDrawSurface = {
+                        drawRect(surfaceColor)
+                        drawLiquidGlassStroke()
+                    },
                 ),
             content = content,
         )
@@ -193,7 +206,8 @@ fun SurfaceLiquidCapsule(
         Box(
             modifier
                 .clip(shape)
-                .background(surfaceColor, shape),
+                .background(surfaceColor, shape)
+                .drawLiquidGlassBorder(shape),
             content = content,
         )
     }
@@ -271,6 +285,7 @@ fun TransparentLiquidCapsule(
                     blur(2f.dp.toPx())
                     lens(12f.dp.toPx(), 24f.dp.toPx())
                 },
+                onDrawSurface = { drawLiquidGlassStroke() },
             ),
         content = content,
     )
@@ -325,7 +340,10 @@ fun SurfaceLiquidMenuCard(
                         blur(2f.dp.toPx())
                         lens(12f.dp.toPx(), 24f.dp.toPx())
                     },
-                    onDrawSurface = { drawRect(surfaceColor) },
+                    onDrawSurface = {
+                        drawRect(surfaceColor)
+                        drawLiquidGlassStroke()
+                    },
                 )
                 .padding(contentPadding),
             horizontalAlignment = Alignment.Start,
@@ -336,6 +354,7 @@ fun SurfaceLiquidMenuCard(
             modifier
                 .clip(shape)
                 .background(surfaceColor, shape)
+                .drawLiquidGlassBorder(shape)
                 .padding(contentPadding),
             horizontalAlignment = Alignment.Start,
             content = content,

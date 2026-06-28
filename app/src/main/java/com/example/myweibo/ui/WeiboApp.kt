@@ -372,10 +372,26 @@ private fun SearchWeiboSort.storageValue(): String =
         SearchWeiboSort.Realtime -> SearchSettingsStore.SORT_REALTIME
     }
 
-private enum class MineContentTab(val label: String) {
+internal enum class MineContentTab(val label: String) {
     Posts("\u5FAE\u535A"),
     Album("\u76F8\u518C")
 }
+
+internal enum class ProfilePagerSideEffect {
+    PostsLoadMore,
+    AlbumLoadMore,
+    AlbumPrefetch,
+}
+
+internal fun activeProfilePagerSideEffects(currentPage: Int): Set<ProfilePagerSideEffect> =
+    when (currentPage) {
+        MineContentTab.Posts.ordinal -> setOf(ProfilePagerSideEffect.PostsLoadMore)
+        MineContentTab.Album.ordinal -> setOf(
+            ProfilePagerSideEffect.AlbumLoadMore,
+            ProfilePagerSideEffect.AlbumPrefetch,
+        )
+        else -> emptySet()
+    }
 
 private fun feedRefreshHintMessage(
     previousItems: List<FeedItem>,
@@ -11762,8 +11778,12 @@ private fun MineScreen(
 
     val topInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
 
-    // Infinite scroll for Posts
-    LaunchedEffect(postsListState) {
+    val activePagerSideEffects by remember(pagerState) {
+        derivedStateOf { activeProfilePagerSideEffects(pagerState.currentPage) }
+    }
+
+    LaunchedEffect(postsListState, activePagerSideEffects) {
+        if (ProfilePagerSideEffect.PostsLoadMore !in activePagerSideEffects) return@LaunchedEffect
         snapshotFlow {
             val layoutInfo = postsListState.layoutInfo
             val lastVisibleIndex = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
@@ -11774,8 +11794,8 @@ private fun MineScreen(
             .collect { onLoadMorePosts() }
     }
 
-    // Infinite scroll for Album
-    LaunchedEffect(albumListState) {
+    LaunchedEffect(albumListState, activePagerSideEffects) {
+        if (ProfilePagerSideEffect.AlbumLoadMore !in activePagerSideEffects) return@LaunchedEffect
         snapshotFlow {
             albumListState.layoutInfo.totalItemsCount > 0 && !albumListState.canScrollForward
         }
@@ -11784,7 +11804,8 @@ private fun MineScreen(
             .collect { onLoadMoreAlbum() }
     }
 
-    LaunchedEffect(albumImages) {
+    LaunchedEffect(albumImages, activePagerSideEffects) {
+        if (ProfilePagerSideEffect.AlbumPrefetch !in activePagerSideEffects) return@LaunchedEffect
         if (albumImages.isNotEmpty()) {
             prefetchAlbumGridThumbnails(albumImages)
         }
