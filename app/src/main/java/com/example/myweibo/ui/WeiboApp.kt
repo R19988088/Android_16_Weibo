@@ -484,6 +484,7 @@ private const val RemoteBytesCacheMaxTotal = 32 * 1024 * 1024
 private const val RemoteBytesMaxCachedEntry = 8 * 1024 * 1024
 private const val RemoteBytesAnimatedMaxRead = 12 * 1024 * 1024
 private const val NavTransitionDurationMs = 280
+private const val HomeTopProgressiveBlurHeightDp = 112
 // ComponentCallbacks2.TRIM_MEMORY_* 在较新 SDK 中已标记 deprecated，数值仍稳定可用。
 private const val TrimMemoryRunningLow = 10
 private const val TrimMemoryRunningCritical = 15
@@ -2107,7 +2108,10 @@ fun WeiboApp(
             return@BackHandler
         }
         when {
-            selectedTab == MainTab.Messages || selectedTab == MainTab.Compose -> Unit
+            selectedTab == MainTab.Messages || selectedTab == MainTab.Compose -> {
+                lastHomeBackPressAt = 0L
+                selectedTab = MainTab.Feed
+            }
             selectedTab != MainTab.Feed -> {
                 lastHomeBackPressAt = 0L
                 selectedTab = MainTab.Feed
@@ -3215,27 +3219,13 @@ fun WeiboApp(
             val messagesWebVisible = selectedTab == MainTab.Messages && mainContentClear
             val composeWebVisible = selectedTab == MainTab.Compose && mainContentClear
             val webTabBackdropExcluded = messagesWebVisible || composeWebVisible
-            var messagesWebMounted by remember { mutableStateOf(false) }
-            var composeWebMounted by remember { mutableStateOf(false) }
-            if (messagesWebVisible) messagesWebMounted = true
-            if (composeWebVisible) composeWebMounted = true
-            LaunchedEffect(messagesWebVisible, messagesWebMounted) {
-                if (!messagesWebVisible && messagesWebMounted) {
-                    delay(NavTransitionDurationMs.toLong())
-                    messagesWebMounted = false
-                }
-            }
-            LaunchedEffect(composeWebVisible, composeWebMounted) {
-                if (!composeWebVisible && composeWebMounted) {
-                    delay(NavTransitionDurationMs.toLong())
-                    composeWebMounted = false
-                }
-            }
+            val messagesWebMounted = true
+            val composeWebMounted = true
 
             if (messagesWebMounted) {
                 Box(
                     Modifier
-                        .then(if (messagesWebVisible) Modifier.fillMaxSize() else Modifier.size(0.dp))
+                        .then(if (messagesWebVisible) Modifier.fillMaxSize() else Modifier.size(1.dp))
                         .graphicsLayer {
                             alpha = if (messagesWebVisible) 1f else 0f
                             clip = true
@@ -3244,7 +3234,9 @@ fun WeiboApp(
                         .blockHiddenTouches(messagesWebVisible),
                 ) {
                     MessagesScreen(
-                        onRootBack = ::handleRootBackPress,
+                        onRootBack = {
+                            selectedTab = MainTab.Feed
+                        },
                         active = messagesWebVisible,
                     )
                 }
@@ -3252,7 +3244,7 @@ fun WeiboApp(
             if (composeWebMounted) {
                 Box(
                     Modifier
-                        .then(if (composeWebVisible) Modifier.fillMaxSize() else Modifier.size(0.dp))
+                        .then(if (composeWebVisible) Modifier.fillMaxSize() else Modifier.size(1.dp))
                         .graphicsLayer {
                             alpha = if (composeWebVisible) 1f else 0f
                             clip = true
@@ -3797,7 +3789,12 @@ fun WeiboApp(
                 }
             }
 
-            if (selectedItem == null && visitedUserId == null && selectedTab != MainTab.Search) {
+            if (
+                selectedItem == null &&
+                visitedUserId == null &&
+                selectedTab != MainTab.Search &&
+                selectedTab != MainTab.Messages
+            ) {
                 if (timelineMenuExpanded) {
                     Box(
                         modifier = Modifier
@@ -10509,7 +10506,7 @@ private fun HomeTopModuleOverlay(
         HomeTopProgressiveBlur(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(topInset + 124.dp),
+                .height(topInset + HomeTopProgressiveBlurHeightDp.dp),
         )
         HomeTopSearchBar(
             value = query,
@@ -11191,14 +11188,23 @@ private fun MobileWeiboWebScreen(
     onRootBack: () -> Unit,
     scrollToTopOnPageFinished: (String?) -> Boolean = { true },
     userAgent: String? = null,
+    topContentPadding: Dp? = null,
+    bottomContentPadding: Dp? = null,
+    onUrlChanged: (String?) -> Unit = {},
+    pageScript: (WebView, String?) -> Unit = { _, _ -> },
     active: Boolean = true,
 ) {
     val context = LocalContext.current
     val topInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    val resolvedTopContentPadding = topContentPadding ?: topInset
     val bottomNavSpace = 96.dp
     val bottomBarGap = 8.dp
     val imeBottom = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
-    val bottomInset = if (imeBottom > 0.dp) imeBottom + bottomBarGap else bottomNavSpace + bottomBarGap
+    val bottomInset = bottomContentPadding ?: if (imeBottom > 0.dp) {
+        imeBottom + bottomBarGap
+    } else {
+        bottomNavSpace + bottomBarGap
+    }
     val mobileUserAgent =
         "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 " +
             "(KHTML, like Gecko) Mobile/15E148 Weibo (iPhone14,2__weibo__14.9.0__iphone__os16.0)"
@@ -11236,8 +11242,19 @@ private fun MobileWeiboWebScreen(
             }
             webViewClient = object : WebViewClient() {
                 override fun onPageFinished(view: WebView?, url: String?) {
+                    onUrlChanged(url)
                     if (!viewportCoordinator.shouldFitOnPageFinished(url)) return
                     view?.fitMobileWebViewport(scrollToTop = scrollToTopOnPageFinished(url))
+                    view?.let { pageScript(it, url) }
+                }
+
+                override fun doUpdateVisitedHistory(
+                    view: WebView?,
+                    url: String?,
+                    isReload: Boolean,
+                ) {
+                    onUrlChanged(url)
+                    view?.let { pageScript(it, url) }
                 }
             }
             loadUrl(pageUrl)
@@ -11276,9 +11293,7 @@ private fun MobileWeiboWebScreen(
             webView.visibility = View.VISIBLE
             webView.onResume()
         } else {
-            webView.onPause()
-            webView.visibility = View.GONE
-            webView.setLayerType(View.LAYER_TYPE_NONE, null)
+            webView.visibility = View.INVISIBLE
         }
     }
 
@@ -11303,13 +11318,13 @@ private fun MobileWeiboWebScreen(
     Box(
         Modifier
             .fillMaxSize()
-            .padding(top = topInset, bottom = bottomInset),
+            .padding(top = resolvedTopContentPadding, bottom = bottomInset),
     ) {
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { webView },
             update = { view ->
-                view.visibility = if (active) View.VISIBLE else View.GONE
+                view.visibility = if (active) View.VISIBLE else View.INVISIBLE
             },
         )
     }
@@ -11320,11 +11335,55 @@ private fun MessagesScreen(
     onRootBack: () -> Unit,
     active: Boolean = true,
 ) {
+    var currentUrl by remember { mutableStateOf<String?>(null) }
+    val messageRoot = remember(currentUrl) {
+        isMessageRootUrl(currentUrl)
+    }
+    val topInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     MobileWeiboWebScreen(
         pageUrl = "https://m.weibo.cn/message",
         onRootBack = onRootBack,
         scrollToTopOnPageFinished = { url -> url?.contains("/message", ignoreCase = true) != true },
+        topContentPadding = if (messageRoot) 0.dp else topInset,
+        bottomContentPadding = 0.dp,
+        onUrlChanged = { currentUrl = it },
+        pageScript = { view, url ->
+            view.applyMessagesPageChrome(messageRoot = isMessageRootUrl(url))
+        },
         active = active,
+    )
+}
+
+private fun isMessageRootUrl(url: String?): Boolean {
+    val normalized = url.orEmpty().substringBefore('?').substringBefore('#').trimEnd('/')
+    return normalized.isBlank() ||
+        normalized.endsWith("/message") ||
+        normalized.endsWith("/message/index")
+}
+
+private fun WebView.applyMessagesPageChrome(messageRoot: Boolean) {
+    evaluateJavascript(
+        """
+        (function() {
+            var styleId = 'myweibo-message-root-chrome';
+            var style = document.getElementById(styleId);
+            if (!style) {
+                style = document.createElement('style');
+                style.id = styleId;
+                document.head.appendChild(style);
+            }
+            style.textContent = ${if (messageRoot) {
+                """
+                '.m-top-nav,.lite-topbar,.lite-page-top,.lite-page-tabbar,.m-tab-bar,.nav-top,.wb-top,.toolbar-wrap{display:none!important;}' +
+                'body{padding-top:0!important;padding-bottom:0!important;}' +
+                '.m-container-max,.m-container,.lite-page-wrap{padding-top:0!important;padding-bottom:0!important;}'
+                """
+            } else {
+                "''"
+            }};
+        })();
+        """.trimIndent(),
+        null,
     )
 }
 
