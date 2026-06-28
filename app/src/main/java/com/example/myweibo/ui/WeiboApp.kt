@@ -254,7 +254,6 @@ import com.example.myweibo.data.CommentSort
 import com.example.myweibo.data.CommentSortStore
 import com.example.myweibo.data.EmoticonCacheStore
 import com.example.myweibo.data.AppThemeMode
-import com.example.myweibo.data.ComposeMediaKind
 import com.example.myweibo.data.ComposeVisibility
 import com.example.myweibo.data.toPostRequest
 import com.example.myweibo.data.MentionSuggestionCacheStore
@@ -2910,21 +2909,24 @@ fun WeiboApp(
         commentSubmitJob = job
     }
 
-    fun submitStatus(text: String, mediaUris: List<Uri>, mediaKind: ComposeMediaKind, visibility: ComposeVisibility) {
+    fun submitStatus(text: String, mediaUris: List<Uri>, visibility: ComposeVisibility) {
         if (statusSubmitting) return
         scope.launch {
             statusSubmitting = true
             try {
                 runCatching {
                     withTimeout(120_000) {
-                        val uploads = when {
-                            mediaUris.isEmpty() -> emptyList()
-                            mediaKind == ComposeMediaKind.Image -> coroutineScope {
-                                mediaUris.take(9).map { uri ->
-                                    async { session.uploadComposeImage(uri) }
-                                }.awaitAll()
-                            }
-                            else -> listOf(session.uploadComposeVideo(mediaUris.first()))
+                        val uploads = coroutineScope {
+                            mediaUris.take(9).map { uri ->
+                                async {
+                                    val mime = context.contentResolver.getType(uri).orEmpty()
+                                    if (mime.startsWith("video/")) {
+                                        session.uploadComposeVideo(uri)
+                                    } else {
+                                        session.uploadComposeImage(uri)
+                                    }
+                                }
+                            }.awaitAll()
                         }
                         session.postStatus(uploads.toPostRequest(text = text, visibility = visibility))
                     }
@@ -9397,24 +9399,17 @@ private fun NativeComposeScreen(
     active: Boolean,
     submitting: Boolean,
     onRootBack: () -> Unit,
-    onSubmit: (String, List<Uri>, ComposeMediaKind, ComposeVisibility) -> Unit,
+    onSubmit: (String, List<Uri>, ComposeVisibility) -> Unit,
 ) {
     var text by remember { mutableStateOf(TextFieldValue("")) }
-    var mediaKind by remember { mutableStateOf(ComposeMediaKind.Image) }
     var mediaUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
     var visibility by remember { mutableStateOf(ComposeVisibility.Public) }
+    val context = LocalContext.current
     val focusRequester = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
-    val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
-        mediaKind = ComposeMediaKind.Image
+    val mediaPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         mediaUris = uris.take(9)
-    }
-    val videoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        uri?.let {
-            mediaKind = ComposeMediaKind.Video
-            mediaUris = listOf(it)
-        }
     }
     val canSubmit = !submitting && (text.text.trim().isNotBlank() || mediaUris.isNotEmpty())
 
@@ -9465,7 +9460,7 @@ private fun NativeComposeScreen(
                 onClick = {
                     focusManager.clearFocus()
                     keyboard?.hide()
-                    onSubmit(text.text, mediaUris, mediaKind, visibility)
+                    onSubmit(text.text, mediaUris, visibility)
                 },
             ) {
                 Text(if (submitting) "发布中" else "发布")
@@ -9508,9 +9503,29 @@ private fun NativeComposeScreen(
         )
 
         if (mediaUris.isNotEmpty()) {
-            if (mediaKind == ComposeMediaKind.Image) {
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(mediaUris, key = { it.toString() }) { uri ->
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(mediaUris, key = { it.toString() }) { uri ->
+                    val mime = remember(uri) { context.contentResolver.getType(uri).orEmpty() }
+                    if (mime.startsWith("video/")) {
+                        Row(
+                            modifier = Modifier
+                                .widthIn(min = 132.dp)
+                                .height(82.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.72f))
+                                .padding(horizontal = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Text(
+                                text = "视频",
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            ComposeMediaRemoveButton(onClick = { mediaUris = mediaUris - uri })
+                        }
+                    } else {
                         Box {
                             LocalUriThumbnail(
                                 uri = uri,
@@ -9525,37 +9540,14 @@ private fun NativeComposeScreen(
                         }
                     }
                 }
-            } else {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.72f))
-                        .padding(horizontal = 12.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Text(
-                        text = "已选择 1 个视频",
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    ComposeMediaRemoveButton(onClick = { mediaUris = emptyList() })
-                }
             }
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             NativeComposeActionChip(
-                label = "图片",
+                label = "图片/视频",
                 enabled = !submitting,
-                onClick = { imagePicker.launch("image/*") },
-            )
-            NativeComposeActionChip(
-                label = "视频",
-                enabled = !submitting,
-                onClick = { videoPicker.launch("video/*") },
+                onClick = { mediaPicker.launch(arrayOf("image/*", "video/*")) },
             )
         }
 

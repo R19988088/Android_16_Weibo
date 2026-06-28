@@ -33,35 +33,39 @@ class ComposePostRequestTest {
     @Test
     fun uploadedImagesBecomePicIdParams() {
         val params = listOf(
-            ComposeMediaUploadResult(ComposeMediaKind.Image, "pic-a", "pic_id"),
-            ComposeMediaUploadResult(ComposeMediaKind.Image, "pic-b", "pic_id"),
+            ComposeMediaUploadResult(ComposeMediaKind.Image, "pic-a", "pic_id", fid = "pic-a"),
+            ComposeMediaUploadResult(ComposeMediaKind.Image, "pic-b", "pic_id", fid = "pic-b"),
         ).toPostRequest(text = "with images").toWebParams()
 
-        assertEquals("pic-a,pic-b", params["pic_id"])
+        assertTrue(params["media"].orEmpty().contains("\"fid\":\"pic-a\""))
+        assertTrue(params["media"].orEmpty().contains("\"fid\":\"pic-b\""))
+        assertFalse(params.containsKey("pic_id"))
         assertFalse(params.containsKey("video_id"))
     }
 
     @Test
     fun uploadedVideoKeepsPublishParamName() {
         val params = listOf(
-            ComposeMediaUploadResult(ComposeMediaKind.Video, "media-a", "media_id"),
+            ComposeMediaUploadResult(ComposeMediaKind.Video, "media-a", "media_id", fid = "fid-a"),
         ).toPostRequest(text = "with video").toWebParams()
 
-        assertEquals("media-a", params["media_id"])
+        assertTrue(params["media"].orEmpty().contains("\"media_id\":\"media-a\""))
+        assertTrue(params["media"].orEmpty().contains("\"fid\":\"fid-a\""))
         assertFalse(params.containsKey("pic_id"))
-        assertFalse(params.containsKey("video_id"))
+        assertFalse(params.containsKey("media_id"))
     }
 
     @Test
-    fun imagesAndVideoCannotShareOneStatusRequest() {
-        val result = runCatching {
-            listOf(
-                ComposeMediaUploadResult(ComposeMediaKind.Image, "pic-a", "pic_id"),
-                ComposeMediaUploadResult(ComposeMediaKind.Video, "media-a", "media_id"),
-            ).toPostRequest(text = "mixed")
-        }
+    fun imagesAndVideoCanShareOneMixedMediaRequest() {
+        val params = listOf(
+            ComposeMediaUploadResult(ComposeMediaKind.Image, "pic-a", "pic_id", fid = "pic-a"),
+            ComposeMediaUploadResult(ComposeMediaKind.Video, "media-a", "media_id", fid = "fid-a"),
+        ).toPostRequest(text = "mixed").toWebParams()
 
-        assertTrue(result.isFailure)
-        assertTrue(result.exceptionOrNull()?.message.orEmpty().contains("不能同时发布"))
+        val media = params["media"].orEmpty()
+        assertTrue(media.contains("\"type\":\"pic\""))
+        assertTrue(media.contains("\"type\":\"video\""))
+        assertTrue(media.contains("\"fid\":\"pic-a\""))
+        assertTrue(media.contains("\"media_id\":\"media-a\""))
     }
 }

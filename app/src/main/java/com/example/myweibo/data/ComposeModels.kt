@@ -54,10 +54,11 @@ data class ComposePostRequest(
     val picIds: List<String> = emptyList(),
     val videoId: String? = null,
     val videoParamName: String = "video_id",
+    val media: List<ComposeMediaUploadResult> = emptyList(),
     val visibility: ComposeVisibility = ComposeVisibility.Public,
 ) {
     fun requireValid() {
-        require(text.trim().isNotBlank() || picIds.isNotEmpty() || !videoId.isNullOrBlank()) {
+        require(text.trim().isNotBlank() || picIds.isNotEmpty() || !videoId.isNullOrBlank() || media.isNotEmpty()) {
             "发帖内容不能为空"
         }
     }
@@ -73,6 +74,7 @@ data class ComposePostRequest(
         ).apply {
             if (picIds.isNotEmpty()) put("pic_id", picIds.joinToString(","))
             videoId?.takeIf { it.isNotBlank() }?.let { put(videoParamName, it) }
+            if (media.isNotEmpty()) put("media", media.toSeeMediaJson())
         }
     }
 }
@@ -81,6 +83,8 @@ data class ComposeMediaUploadResult(
     val kind: ComposeMediaKind,
     val mediaId: String,
     val publishParamName: String,
+    val fid: String? = null,
+    val mediaGroupId: String? = null,
     val thumbnailId: String? = null,
 ) {
     init {
@@ -93,17 +97,39 @@ fun Iterable<ComposeMediaUploadResult>.toPostRequest(
     text: String,
     visibility: ComposeVisibility = ComposeVisibility.Public,
 ): ComposePostRequest {
-    val images = filter { it.kind == ComposeMediaKind.Image }.map { it.mediaId }
-    val videoResult = firstOrNull { it.kind == ComposeMediaKind.Video }
-    require(images.isEmpty() || videoResult == null) { "图片和视频不能同时发布" }
+    val media = toList()
+    if (media.isNotEmpty()) {
+        return ComposePostRequest(
+            text = text,
+            media = media,
+            visibility = visibility,
+        )
+    }
     return ComposePostRequest(
         text = text,
-        picIds = images,
-        videoId = videoResult?.mediaId,
-        videoParamName = videoResult?.publishParamName ?: "video_id",
         visibility = visibility,
     )
 }
+
+internal fun Iterable<ComposeMediaUploadResult>.toSeeMediaJson(): String =
+    JSONArray().also { arr ->
+        forEach { item ->
+            val media = JSONObject()
+                .put("type", if (item.kind == ComposeMediaKind.Video) "video" else "pic")
+                .put("createtype", "localfile")
+                .put("picStatus", if (item.kind == ComposeMediaKind.Video) 0 else 1)
+                .put("resource", JSONObject().put("is_duet", "0").put("video_tail", 0).put("video_down", 1))
+            item.mediaGroupId?.takeIf { it.isNotBlank() }?.let { media.put("media_group_id", it) }
+            if (item.kind == ComposeMediaKind.Video) {
+                media.put("media_id", item.mediaId)
+                item.fid?.takeIf { it.isNotBlank() }?.let { media.put("fid", it) }
+            } else {
+                media.put("bypass", "unistore.image")
+                media.put("fid", item.fid?.takeIf { it.isNotBlank() } ?: item.mediaId)
+            }
+            arr.put(media)
+        }
+    }.toString()
 
 internal fun ComposeDraft.toJson(): JSONObject =
     JSONObject()

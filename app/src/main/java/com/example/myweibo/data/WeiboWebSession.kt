@@ -24,6 +24,9 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
+import java.io.RandomAccessFile
+import java.security.MessageDigest
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLDecoder
@@ -591,11 +594,15 @@ class WeiboWebSession(context: Context) {
 
     suspend fun postStatus(request: ComposePostRequest) {
         val params = request.toWebParams()
-        val raw = postForm(
-            path = WeiboEndpoints.STATUS_CREATE,
-            params = params,
-            referer = "https://weibo.com/",
-        )
+        val raw = if (request.media.isNotEmpty()) {
+            postMssStatus(params)
+        } else {
+            postForm(
+                path = WeiboEndpoints.STATUS_CREATE,
+                params = params,
+                referer = "https://weibo.com/",
+            )
+        }
         WeiboJsonParser.assertMutationSuccess(raw, "微博发布失败")
     }
 
@@ -1088,6 +1095,12 @@ class WeiboWebSession(context: Context) {
 
     private suspend fun uploadImageMedia(uri: Uri): ComposeMediaUploadResult {
         val errors = mutableListOf<String>()
+        runCatching { nativeUploadMssMedia(uri = uri, kind = ComposeMediaKind.Image) }
+            .onFailure { error -> errors += "see-mss-image:${error.message.orEmpty().take(160)}" }
+            .getOrNull()
+            ?.takeIf { it.mediaId.isNotBlank() }
+            ?.let { return it }
+
         suspend fun attempt(label: String, block: suspend () -> String): String? =
             runCatching { block() }
                 .onFailure { error -> errors += "$label:${error.message.orEmpty().take(160)}" }
@@ -1124,6 +1137,7 @@ class WeiboWebSession(context: Context) {
             kind = ComposeMediaKind.Image,
             mediaId = picId,
             publishParamName = "pic_id",
+            fid = picId,
         )
     }
 
@@ -1138,44 +1152,75 @@ class WeiboWebSession(context: Context) {
                 .getOrNull()
                 ?.takeIf { it.mediaId.isNotBlank() }
 
-        val video = attempt("pc-video-file") {
-            nativeUploadMultipart(
-                uri = uri,
-                url = "https://weibo.com/ajax/statuses/uploadVideo",
-                fieldName = "file",
-                referer = "https://weibo.com/",
-                origin = "https://weibo.com",
-                userAgent = DESKTOP_CHROME_USER_AGENT,
-                extraFields = linkedMapOf("media_type" to "video"),
-                parser = ::parseUploadVideoResult,
-            )
-        } ?: attempt("pc-media-file") {
-            nativeUploadMultipart(
-                uri = uri,
-                url = "https://weibo.com/ajax/statuses/upload",
-                fieldName = "file",
-                referer = "https://weibo.com/",
-                origin = "https://weibo.com",
-                userAgent = DESKTOP_CHROME_USER_AGENT,
-                extraFields = linkedMapOf("type" to "video", "media_type" to "video"),
-                parser = ::parseUploadVideoResult,
-            )
-        } ?: attempt("mweibo-video-file") {
-            ensureMweiboSession()
-            nativeUploadMultipart(
-                uri = uri,
-                url = "https://m.weibo.cn/api/statuses/uploadVideo",
-                fieldName = "file",
-                referer = "https://m.weibo.cn/compose/",
-                origin = "https://m.weibo.cn",
-                userAgent = MWEIBO_USER_AGENT,
-                extraFields = linkedMapOf("media_type" to "video"),
-                parser = ::parseUploadVideoResult,
-            )
+        val video = attempt("see-mss-video") {
+            nativeUploadMssMedia(uri = uri, kind = ComposeMediaKind.Video)
         } ?: throw IllegalStateException("视频上传失败: ${errors.joinToString(" | ")}")
 
         return video
     }
+
+    private suspend fun nativeUploadMssMedia(uri: Uri, kind: ComposeMediaKind): ComposeMediaUploadResult =
+        withContext(Dispatchers.IO) {
+            val file = copyUriToUploadFile(uri)
+            try {
+                val address = loadUploadAddress()
+                val endpoint = address.endpointFor(kind)
+                val fileMd5 = file.md5()
+                val fileName = file.name.replace(" ", "_")
+                val mediaProps = JSONObject()
+                    .put("ori", 1)
+                    .put("raw_md5", fileMd5)
+                    .put("createtype", "localfile")
+                    .toString()
+                val init = mssInitUpload(
+                    initUrl = endpoint.initUrl,
+                    length = file.length(),
+                    check = fileMd5,
+                    name = fileName,
+                    mediaProps = mediaProps,
+                    type = if (kind == ComposeMediaKind.Video) "video" else "pic",
+                )
+                val uploadUrl = init.uploadUrl?.takeIf { it.isNotBlank() } ?: endpoint.uploadUrl
+                val chunkSize = (init.length.takeIf { it > 0 } ?: 4L) * 1024L
+                val chunkCount = ((file.length() + chunkSize - 1) / chunkSize).toInt().coerceAtLeast(1)
+                var lastRaw = ""
+                for (index in 0 until chunkCount) {
+                    val start = index.toLong() * chunkSize
+                    val size = minOf(chunkSize.toLong(), file.length() - start).coerceAtLeast(0)
+                    val sectionMd5 = file.md5(start, size)
+                    lastRaw = mssUploadChunk(
+                        uploadUrl = uploadUrl,
+                        chunkSize = size,
+                        fileToken = init.fileToken,
+                        urlTag = init.urlTag,
+                        sectionCheck = sectionMd5,
+                        mediaProps = mediaProps,
+                        chunkIndex = index,
+                        startLoc = start.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+                        chunkCount = chunkCount,
+                        file = file,
+                        offset = start,
+                        size = size,
+                        type = if (kind == ComposeMediaKind.Video) "video" else "pic",
+                        fileCheck = fileMd5,
+                        fileLength = file.length(),
+                    )
+                }
+                if (kind == ComposeMediaKind.Video) {
+                    parseUploadVideoResult(lastRaw)
+                } else {
+                    val picId = parseUploadPicId(lastRaw)
+                    ComposeMediaUploadResult(
+                        kind = ComposeMediaKind.Image,
+                        mediaId = picId,
+                        publishParamName = "pic_id",
+                        fid = picId,
+                    )
+                }
+            } finally {
+                if (file.parentFile?.name == UPLOAD_TMP_DIR) file.delete()
+            }
+        }
 
     private suspend fun nativeUploadImageBase64(uri: Uri): String =
         withContext(Dispatchers.IO) {
@@ -1374,8 +1419,305 @@ class WeiboWebSession(context: Context) {
             parser(responseBody)
         }
 
-    private fun parseUploadPicId(raw: String): String {
-        val jsonText = raw.trim()
+    private suspend fun postMssStatus(params: Map<String, String>): String =
+        nativePostAbsoluteForm(
+            url = "$WEIBO_MOBILE_API_BASE/2/statuses/send",
+            params = params,
+            referer = "https://m.weibo.cn/",
+            origin = "https://m.weibo.cn",
+        )
+
+    private fun copyUriToUploadFile(uri: Uri): File {
+        if (uri.scheme.equals("file", ignoreCase = true)) {
+            uri.path?.let { path ->
+                val file = File(path)
+                if (file.exists()) return file
+            }
+        }
+        val resolver = appContext.contentResolver
+        val mime = resolver.getType(uri)?.takeIf { it.isNotBlank() } ?: "application/octet-stream"
+        val fileName = "${System.currentTimeMillis()}_${uploadFileName(uri, mime).sanitizeMultipartFileName()}"
+        val dir = File(appContext.cacheDir, UPLOAD_TMP_DIR).apply { mkdirs() }
+        val target = File(dir, fileName)
+        resolver.openInputStream(uri)?.use { input ->
+            target.outputStream().use { output -> input.copyTo(output) }
+        } ?: throw IllegalStateException("无法读取所选媒体")
+        return target
+    }
+
+    private fun loadUploadAddress(): MssUploadAddress {
+        val errors = mutableListOf<String>()
+        val params = emptyMap<String, String>()
+        for (base in WEIBO_MOBILE_API_BASES) {
+            val url = "$base/2/multimedia/multidiscovery"
+            val address = runCatching {
+                parseMssUploadAddress(
+                    nativePostAbsoluteFormBlocking(
+                        url = url,
+                        params = params,
+                        referer = "https://m.weibo.cn/",
+                        origin = "https://m.weibo.cn",
+                    ),
+                )
+            }.onFailure { error ->
+                errors += "${Uri.parse(base).host}:${error.message.orEmpty().take(100)}"
+            }.getOrNull()
+            if (address != null) return address
+        }
+        throw IllegalStateException("无法获取 See 上传配置: ${errors.joinToString(" | ")}")
+    }
+
+    private fun parseMssUploadAddress(raw: String): MssUploadAddress {
+        val root = runCatching { JSONObject(cleanJsonObject(raw)) }
+            .getOrElse { throw IllegalStateException("上传配置返回无法解析: ${raw.take(80)}") }
+        val data = root.optJSONObject("data") ?: root
+        fun endpoint(name: String): MssUploadEndpoint? {
+            val item = data.optJSONObject(name) ?: root.optJSONObject(name) ?: return null
+            val initUrl = item.optStringOrNull("init_url") ?: return null
+            val uploadUrl = item.optStringOrNull("upload_url") ?: return null
+            return MssUploadEndpoint(
+                initUrl = absoluteMobileApiUrl(initUrl),
+                uploadUrl = absoluteMobileApiUrl(uploadUrl),
+                checkUrl = item.optStringOrNull("check_url")?.let(::absoluteMobileApiUrl),
+                bypass = item.optStringOrNull("bypass"),
+            )
+        }
+        val address = MssUploadAddress(
+            image = endpoint("image"),
+            pic = endpoint("pic"),
+            video = endpoint("video"),
+            livePhoto = endpoint("livephoto"),
+        )
+        if (address.image == null && address.pic == null && address.video == null) {
+            val message = root.optStringOrNull("message") ?: root.optStringOrNull("msg") ?: raw.take(120)
+            throw IllegalStateException("上传配置缺少地址: $message")
+        }
+        return address
+    }
+
+    private fun mssInitUpload(
+        initUrl: String,
+        length: Long,
+        check: String,
+        name: String,
+        mediaProps: String,
+        type: String,
+    ): MssUploadInit {
+        val raw = nativePostAbsoluteFormBlocking(
+            url = initUrl,
+            params = linkedMapOf(
+                "length" to length.toString(),
+                "check" to check,
+                "name" to name,
+                "mediaprops" to mediaProps,
+                "type" to type,
+            ).apply {
+                MSS_SOURCE.takeIf { it.isNotBlank() }?.let { put("source", it) }
+            },
+            referer = "https://m.weibo.cn/",
+            origin = "https://m.weibo.cn",
+        )
+        val root = runCatching { JSONObject(cleanJsonObject(raw)) }
+            .getOrElse { throw IllegalStateException("上传初始化返回无法解析: ${raw.take(80)}") }
+        val data = root.optJSONObject("data") ?: root
+        val fileToken = data.optStringOrNull("fileToken")
+            ?: data.optStringOrNull("filetoken")
+            ?: data.optStringOrNull("file_token")
+            ?: throw IllegalStateException("上传初始化缺少 filetoken: ${raw.take(100)}")
+        return MssUploadInit(
+            fileToken = fileToken,
+            length = data.optLong("length", 0L).takeIf { it > 0 } ?: root.optLong("length", 0L),
+            uploadUrl = data.optStringOrNull("upload_url")?.let(::absoluteMobileApiUrl),
+            urlTag = data.optStringOrNull("urlTag") ?: data.optStringOrNull("urltag").orEmpty(),
+        )
+    }
+
+    private fun mssUploadChunk(
+        uploadUrl: String,
+        chunkSize: Long,
+        fileToken: String,
+        urlTag: String,
+        sectionCheck: String,
+        mediaProps: String,
+        chunkIndex: Int,
+        startLoc: Int,
+        chunkCount: Int,
+        file: File,
+        offset: Long,
+        size: Long,
+        type: String,
+        fileCheck: String,
+        fileLength: Long,
+    ): String {
+        val params = linkedMapOf(
+            "chunksize" to chunkSize.toString(),
+            "filetoken" to fileToken,
+            "urltag" to urlTag,
+            "sectioncheck" to sectionCheck,
+            "mediaprops" to mediaProps,
+            "chunkindex" to chunkIndex.toString(),
+            "startloc" to startLoc.toString(),
+            "chunkcount" to chunkCount.toString(),
+            "type" to type,
+            "filecheck" to fileCheck,
+            "filelength" to fileLength.toString(),
+            "file_source" to "1",
+            "file_upload_from" to "710",
+            "act" to "send",
+        ).apply {
+            MSS_SOURCE.takeIf { it.isNotBlank() }?.let { put("source", it) }
+        }
+        return nativePostAbsoluteOctetStreamBlocking(
+            url = appendQuery(uploadUrl, params),
+            file = file,
+            offset = offset,
+            size = size,
+            referer = "https://m.weibo.cn/",
+            origin = "https://m.weibo.cn",
+        )
+    }
+
+    private fun nativePostAbsoluteFormBlocking(
+        url: String,
+        params: Map<String, String>,
+        referer: String,
+        origin: String,
+    ): String {
+        CookieManager.getInstance().flush()
+        val cookie = mergedCookieHeader(referer)
+        if (!hasAuthenticatedCookie(cookie)) {
+            throw IllegalStateException("未发现微博登录 Cookie，请到账户页登录后重试")
+        }
+        val body = params.entries.joinToString("&") { (key, value) ->
+            "${key.urlEncode()}=${value.urlEncode()}"
+        }
+        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"
+            doOutput = true
+            connectTimeout = 15_000
+            readTimeout = 30_000
+            instanceFollowRedirects = false
+            setRequestProperty("User-Agent", MWEIBO_USER_AGENT)
+            setRequestProperty("Accept", "application/json, text/plain, */*")
+            setRequestProperty("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
+            setRequestProperty("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")
+            setRequestProperty("Referer", referer)
+            setRequestProperty("Origin", origin)
+            setRequestProperty("X-Requested-With", "XMLHttpRequest")
+            setRequestProperty("Cookie", cookie)
+        }
+        if (body.isNotBlank()) {
+            connection.outputStream.bufferedWriter(Charsets.UTF_8).use { it.write(body) }
+        } else {
+            connection.outputStream.use { }
+        }
+        return readTextResponse(connection, "weibo-mss-form-failed")
+    }
+
+    private suspend fun nativePostAbsoluteForm(
+        url: String,
+        params: Map<String, String>,
+        referer: String,
+        origin: String,
+    ): String =
+        withContext(Dispatchers.IO) {
+            nativePostAbsoluteFormBlocking(url, params, referer, origin)
+        }
+
+    private fun nativePostAbsoluteOctetStreamBlocking(
+        url: String,
+        file: File,
+        offset: Long,
+        size: Long,
+        referer: String,
+        origin: String,
+    ): String {
+        CookieManager.getInstance().flush()
+        val cookie = mergedCookieHeader(referer)
+        if (!hasAuthenticatedCookie(cookie)) {
+            throw IllegalStateException("未发现微博登录 Cookie，请到账户页登录后重试")
+        }
+        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"
+            doOutput = true
+            connectTimeout = 20_000
+            readTimeout = 120_000
+            instanceFollowRedirects = false
+            setRequestProperty("User-Agent", MWEIBO_USER_AGENT)
+            setRequestProperty("Accept", "application/json, text/plain, */*")
+            setRequestProperty("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
+            setRequestProperty("Content-Type", "application/octet-stream")
+            setRequestProperty("Content-Length", size.toString())
+            setRequestProperty("Referer", referer)
+            setRequestProperty("Origin", origin)
+            setRequestProperty("X-Requested-With", "XMLHttpRequest")
+            setRequestProperty("Cookie", cookie)
+        }
+        RandomAccessFile(file, "r").use { input ->
+            input.seek(offset)
+            connection.outputStream.use { output ->
+                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                var remaining = size
+                while (remaining > 0) {
+                    val read = input.read(buffer, 0, minOf(buffer.size.toLong(), remaining).toInt())
+                    if (read < 0) break
+                    output.write(buffer, 0, read)
+                    remaining -= read
+                }
+            }
+        }
+        return readTextResponse(connection, "weibo-mss-upload-failed")
+    }
+
+    private fun readTextResponse(connection: HttpURLConnection, label: String): String {
+        val status = connection.responseCode
+        syncResponseCookies(connection)
+        val body = if (status in 200..299) {
+            connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+        } else {
+            val errorBody = connection.errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
+            throw IllegalStateException("$label:$status ${errorBody.take(160)}")
+        }
+        if (body.trimStart().startsWith("<")) {
+            throw IllegalStateException("$label:微博返回 HTML")
+        }
+        return body
+    }
+
+    private fun File.md5(offset: Long = 0L, size: Long = length() - offset): String {
+        val digest = MessageDigest.getInstance("MD5")
+        RandomAccessFile(this, "r").use { input ->
+            input.seek(offset)
+            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+            var remaining = size
+            while (remaining > 0) {
+                val read = input.read(buffer, 0, minOf(buffer.size.toLong(), remaining).toInt())
+                if (read < 0) break
+                digest.update(buffer, 0, read)
+                remaining -= read
+            }
+        }
+        return digest.digest().joinToString("") { "%02x".format(it) }
+    }
+
+    private fun appendQuery(url: String, params: Map<String, String>): String {
+        val query = params.entries.joinToString("&") { (key, value) ->
+            "${key.urlEncode()}=${value.urlEncode()}"
+        }
+        if (query.isBlank()) return url
+        return url + if (url.contains("?")) "&$query" else "?$query"
+    }
+
+    private fun absoluteMobileApiUrl(url: String): String =
+        when {
+            url.startsWith("http://", ignoreCase = true) || url.startsWith("https://", ignoreCase = true) -> url
+            url.startsWith("//") -> "https:$url"
+            url.startsWith("/") -> "$WEIBO_MOBILE_API_BASE$url"
+            else -> "$WEIBO_MOBILE_API_BASE/$url"
+        }
+
+    private fun cleanJsonObject(raw: String): String =
+        raw.trim()
             .removePrefix("(")
             .removeSuffix(")")
             .let { text ->
@@ -1383,6 +1725,9 @@ class WeiboWebSession(context: Context) {
                 val end = text.lastIndexOf('}')
                 if (start >= 0 && end > start) text.substring(start, end + 1) else text
             }
+
+    private fun parseUploadPicId(raw: String): String {
+        val jsonText = cleanJsonObject(raw)
         val root = runCatching { JSONObject(jsonText) }
             .getOrElse { throw IllegalStateException("图片上传返回无法解析: ${raw.take(80)}") }
         val direct = root.optStringOrNull("pic_id")
@@ -1411,14 +1756,7 @@ class WeiboWebSession(context: Context) {
     }
 
     private fun parseUploadVideoResult(raw: String): ComposeMediaUploadResult {
-        val jsonText = raw.trim()
-            .removePrefix("(")
-            .removeSuffix(")")
-            .let { text ->
-                val start = text.indexOf('{')
-                val end = text.lastIndexOf('}')
-                if (start >= 0 && end > start) text.substring(start, end + 1) else text
-            }
+        val jsonText = cleanJsonObject(raw)
         val root = runCatching { JSONObject(jsonText) }
             .getOrElse { throw IllegalStateException("视频上传返回无法解析: ${raw.take(80)}") }
         val data = root.optJSONObject("data")
@@ -1426,11 +1764,18 @@ class WeiboWebSession(context: Context) {
             ?: data?.optJSONObject("video")
             ?: root.optJSONObject("media")
             ?: root.optJSONObject("video")
+        val fid = root.optStringOrNull("fid")
+            ?: root.optStringOrNull("vfid")
+            ?: data?.optStringOrNull("fid")
+            ?: data?.optStringOrNull("vfid")
+            ?: media?.optStringOrNull("fid")
+            ?: media?.optStringOrNull("vfid")
         videoPublishFields(root, data, media).firstOrNull()?.let { (paramName, value) ->
             return ComposeMediaUploadResult(
                 kind = ComposeMediaKind.Video,
                 mediaId = value,
                 publishParamName = paramName,
+                fid = fid,
             )
         }
 
@@ -1475,6 +1820,33 @@ class WeiboWebSession(context: Context) {
 
     private fun String.sanitizeMultipartFileName(): String =
         replace("\"", "_").replace("\r", "_").replace("\n", "_")
+
+    private data class MssUploadAddress(
+        val image: MssUploadEndpoint?,
+        val pic: MssUploadEndpoint?,
+        val video: MssUploadEndpoint?,
+        val livePhoto: MssUploadEndpoint?,
+    ) {
+        fun endpointFor(kind: ComposeMediaKind): MssUploadEndpoint =
+            when (kind) {
+                ComposeMediaKind.Image -> image ?: pic
+                ComposeMediaKind.Video -> video
+            } ?: throw IllegalStateException("See 上传配置缺少 ${kind.name} 地址")
+    }
+
+    private data class MssUploadEndpoint(
+        val initUrl: String,
+        val uploadUrl: String,
+        val checkUrl: String?,
+        val bypass: String?,
+    )
+
+    private data class MssUploadInit(
+        val fileToken: String,
+        val length: Long,
+        val uploadUrl: String?,
+        val urlTag: String,
+    )
 
     private fun JSONObject.optStringOrNull(name: String): String? {
         if (!has(name) || isNull(name)) return null
@@ -1612,6 +1984,8 @@ class WeiboWebSession(context: Context) {
         val jar = linkedMapOf<String, String>()
         listOf(
             primaryOrigin,
+            WEIBO_MOBILE_API_BASE,
+            "https://api.weibo.com/",
             "https://picupload.weibo.com/",
             "https://s.weibo.com/",
             "https://m.weibo.cn/",
@@ -1853,6 +2227,13 @@ class WeiboWebSession(context: Context) {
 
     companion object {
         private const val WEIBO_HOME = "https://weibo.com/"
+        private const val WEIBO_MOBILE_API_BASE = "https://api.weibo.cn"
+        private val WEIBO_MOBILE_API_BASES = listOf(
+            WEIBO_MOBILE_API_BASE,
+            "https://api.weibo.com",
+        )
+        private const val MSS_SOURCE = ""
+        private const val UPLOAD_TMP_DIR = "uploadtmp"
         private const val MUTUAL_FOLLOW_MENTION_LIMIT = 40
         private const val RELATION_LIST_MAX_PAGES = 100
         private const val FRIENDS_CIRCLE_GID = "100097312739005"
@@ -1865,6 +2246,8 @@ class WeiboWebSession(context: Context) {
             "https://passport.weibo.cn/",
             "https://m.weibo.cn/",
             "https://card.weibo.com/",
+            WEIBO_MOBILE_API_BASE,
+            "https://api.weibo.com/",
         )
         private const val DESKTOP_CHROME_USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +

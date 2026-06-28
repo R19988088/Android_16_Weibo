@@ -612,8 +612,19 @@ object WeiboJsonParser {
 
     fun assertMutationSuccess(raw: String, defaultError: String) {
         val root = JSONObject(raw)
-        if (root.optInt("ok", 0) != 1 && !root.optBoolean("result", false)) {
-            throw IllegalStateException(root.optNullableString("msg") ?: defaultError)
+        val okValue = root.opt("ok")
+        val code = root.optNullableString("code")
+        val success = okValue == 1 ||
+            okValue == true ||
+            okValue?.toString() == "1" ||
+            root.optBoolean("result", false) ||
+            code == "100000"
+        if (!success) {
+            throw IllegalStateException(
+                root.optNullableString("msg")
+                    ?: root.optNullableString("message")
+                    ?: defaultError,
+            )
         }
     }
 
