@@ -11729,6 +11729,8 @@ private fun MineScreen(
     onBackgroundPlaybackChange: (Boolean) -> Unit = {},
     themeMode: AppThemeMode = AppThemeMode.Light,
     onThemeModeChange: (AppThemeMode) -> Unit = {},
+    accentColorArgb: Long? = null,
+    onAccentColorChange: (Long?) -> Unit = {},
     feedThumbnailQuality: FeedThumbnailQuality = FeedThumbnailQuality.Medium,
     onFeedThumbnailQualityChange: (FeedThumbnailQuality) -> Unit = {},
     metadataDisplaySettings: MetadataDisplaySettings = MetadataDisplaySettings(),
