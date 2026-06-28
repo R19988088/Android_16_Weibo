@@ -72,6 +72,7 @@ fun LiquidBottomTabs(
     feedTabIndex: Int = 0,
     lensScale: Float = 1f,
     onTabLongPress: (index: Int) -> Unit = {},
+    onTabDoubleTap: (index: Int) -> Unit = {},
     content: @Composable RowScope.() -> Unit
 ) {
     val isLightTheme = !isSystemInDarkTheme()
@@ -272,6 +273,7 @@ fun LiquidBottomTabs(
                     },
                     onDrawSurface = {
                         drawRect(surfaceColor)
+                        drawLiquidGlassThemeOverlay(isLightTheme)
                         drawLiquidGlassStroke()
                     }
                 )
@@ -316,6 +318,7 @@ fun LiquidBottomTabs(
                         },
                         onDrawSurface = {
                             drawRect(surfaceColor)
+                            drawLiquidGlassThemeOverlay(isLightTheme)
                             drawLiquidGlassStroke()
                         }
                     )
@@ -381,7 +384,6 @@ fun LiquidBottomTabs(
                             alpha = 1f - progress
                         )
                         drawRect(Color.Black.copy(alpha = 0.03f * progress))
-                        drawLiquidGlassStroke()
                     }
                 )
                 .height(56f.dp)
@@ -393,6 +395,22 @@ fun LiquidBottomTabs(
                 .matchParentSize()
                 .pointerInput(feedTabIndex, horizontalPaddingPx, contentWidthPx, tabWidth, tabsCount, isLtr) {
                     detectTapGestures(
+                        onDoubleTap = { offset ->
+                            val localX = (offset.x - horizontalPaddingPx)
+                                .fastCoerceIn(0f, contentWidthPx)
+                            var bestIndex = 0
+                            var bestDistance = Float.MAX_VALUE
+                            for (i in 0 until tabsCount) {
+                                val centerX = tabWidth * (i + 0.5f)
+                                val distance = kotlin.math.abs(localX - centerX)
+                                if (distance < bestDistance) {
+                                    bestDistance = distance
+                                    bestIndex = i
+                                }
+                            }
+                            val index = if (isLtr) bestIndex else tabsCount - 1 - bestIndex
+                            onTabDoubleTap(index)
+                        },
                         onLongPress = { offset ->
                             val localX = (offset.x - horizontalPaddingPx)
                                 .fastCoerceIn(0f, contentWidthPx)

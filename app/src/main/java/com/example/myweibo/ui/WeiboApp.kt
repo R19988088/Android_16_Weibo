@@ -314,6 +314,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
@@ -321,6 +322,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
@@ -489,6 +491,8 @@ private val HomeTopModuleHeight = 52.dp
 private val HomeTopModuleBottomGap = 12.dp
 private const val SingleImageMaxHeightToWidth = 5f
 private const val SingleImageMaxWidthFraction = 0.7f
+private const val ExtraTallImageRatioThreshold = 0.25f
+private const val ExtraTallSingleImageAspectRatio = 0.5f
 private const val VideoMaxHeightToWidth = 1f
 private val VideoControlCapsuleShape = RoundedCornerShape(percent = 50)
 private const val VideoMaxWidthFraction = 1f
@@ -498,6 +502,7 @@ private const val AlbumGridMaxReadBytes = 768 * 1024
 private const val AlbumGridPrefetchConcurrency = 8
 private const val AlbumGridPrefetchBatchSize = 48
 private const val FeedBitmapCacheMaxBytes = 32 * 1024 * 1024
+private val FeedImageLoadSemaphore = Semaphore(6)
 private const val RemoteBytesCacheMaxTotal = 32 * 1024 * 1024
 private const val RemoteBytesMaxCachedEntry = 8 * 1024 * 1024
 private const val RemoteBytesAnimatedMaxRead = 12 * 1024 * 1024
@@ -1146,6 +1151,48 @@ private fun remoteReadLimitForDecodeDim(maxDecodeDim: Int): Int = when {
     maxDecodeDim <= AlbumGridMaxDecodeDim -> 4 * 1024 * 1024
     maxDecodeDim <= 960 -> 8 * 1024 * 1024
     else -> 12 * 1024 * 1024
+}
+
+private suspend fun loadFirstRemoteBitmap(
+    urls: List<String>,
+    maxDecodeDim: Int,
+): Pair<String, Bitmap>? {
+    urls.forEach { url ->
+        decodeCachedRemoteBitmap(url, maxDecodeDim)?.let { bitmap -> return url to bitmap }
+    }
+    val uncachedUrls = urls.filter { it.isNotBlank() }
+    if (uncachedUrls.isEmpty()) return null
+    return coroutineScope {
+        val deferred = uncachedUrls.map { candidateUrl ->
+            async(Dispatchers.IO) {
+                FeedImageLoadSemaphore.withPermit {
+                    runCatching {
+                        loadRemoteBitmap(
+                            url = candidateUrl,
+                            maxDecodeDim = maxDecodeDim,
+                        )?.let { bitmap -> candidateUrl to bitmap }
+                    }.getOrNull()
+                }
+            }
+        }
+        val pending = deferred.toMutableSet()
+        var resolved: Pair<String, Bitmap>? = null
+        while (pending.isNotEmpty() && resolved == null) {
+            val (job, result) = select {
+                pending.forEach { job ->
+                    job.onAwait { result -> job to result }
+                }
+            }
+            pending.remove(job)
+            if (result != null) {
+                resolved = result
+            }
+        }
+        if (resolved != null) {
+            deferred.forEach { if (!it.isCompleted) it.cancel() }
+        }
+        resolved
+    }
 }
 
 private fun decodeBitmapFromBytes(bytes: ByteArray, maxDecodeDim: Int): Bitmap? {
@@ -3856,6 +3903,7 @@ fun WeiboApp(
                             else -> Unit
                         }
                     },
+                    onFeedDoubleTap = { refreshTimelineFromTop() },
                     feedTabLabel = timelineKind.label,
                     selectedTimelineKind = timelineKind,
                     onTimelineKindChange = { kind ->
@@ -4251,7 +4299,7 @@ private fun FollowFeedScreen(
                 val layoutInfo = listState.layoutInfo
                 val totalItems = layoutInfo.totalItemsCount
                 val lastVisibleItem = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-                totalItems > 0 && lastVisibleItem >= totalItems - 3
+                totalItems > 0 && lastVisibleItem >= totalItems - 8
             }
         }
 
@@ -5245,6 +5293,9 @@ private fun singleImageDisplayAspectRatio(
     val minAspectFromHeightCap = 1f / maxHeightToWidth
     return naturalAspect.coerceAtLeast(minAspectFromHeightCap).coerceAtMost(3f)
 }
+
+private fun isExtraTallSingleImage(width: Int, height: Int): Boolean =
+    width > 0 && height > 0 && width.toFloat() / height < ExtraTallImageRatioThreshold
 
 private fun feedVideoDisplayAspectRatio(media: FeedMedia): Float {
     val width = media.coverWidth ?: when (media.videoOrientation) {
@@ -6471,6 +6522,10 @@ private fun MediaStrip(
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 if (mediaGridItems.size == 1 && mediaGridItems.first() is FeedMediaGridItem.Image) {
                     val image = (mediaGridItems.first() as FeedMediaGridItem.Image).image
+                    val extraTallImage = isExtraTallSingleImage(
+                        width = image.width ?: 0,
+                        height = image.height ?: 0,
+                    )
                     val aspect = singleImageDisplayAspectRatio(
                         width = image.width ?: 0,
                         height = image.height ?: 0,
@@ -6483,8 +6538,10 @@ private fun MediaStrip(
                             modifier = Modifier
                                 .align(Alignment.TopStart)
                                 .fillMaxWidth(SingleImageMaxWidthFraction)
-                                .aspectRatio(aspect),
-                            contentScale = ContentScale.Crop,
+                                .aspectRatio(
+                                    if (extraTallImage) ExtraTallSingleImageAspectRatio else aspect,
+                                ),
+                            contentScale = if (extraTallImage) ContentScale.Fit else ContentScale.Crop,
                             onOpenViewer = { index, onClosed -> openImageViewer(index, onClosed) },
                         )
                         if (onDetailClick != null) {
@@ -15498,21 +15555,11 @@ private fun RemoteImage(
             return@LaunchedEffect
         }
         if (bitmap?.takeIfDrawable() != null) return@LaunchedEffect
-        for (candidateUrl in candidates) {
-            val loaded = runCatching {
-                withContext(Dispatchers.IO) {
-                    loadRemoteBitmap(
-                        url = candidateUrl,
-                        maxDecodeDim = maxDecodeDim,
-                    )
-                }
-            }.getOrNull()
-            if (loaded != null) {
-                bitmap = loaded
+        loadFirstRemoteBitmap(candidates, maxDecodeDim)?.let { (loadedUrl, loaded) ->
+            bitmap = loaded
                 failed = false
-                FeedBitmapCache.put(candidateUrl, loaded)
+            FeedBitmapCache.put(loadedUrl, loaded)
                 return@LaunchedEffect
-            }
         }
         if (bitmap?.takeIfDrawable() == null) {
             failed = candidates.isNotEmpty()

@@ -34,6 +34,26 @@ class WeiboAppBehaviorSourceTest {
     }
 
     @Test
+    fun extraTallSingleImageUsesDoubleStandardHeightAndFitContentScale() {
+        assertTrue(source.contains("private const val ExtraTallImageRatioThreshold = 0.25f"))
+        assertTrue(source.contains("private const val ExtraTallSingleImageAspectRatio = 0.5f"))
+        assertTrue(source.contains("isExtraTallSingleImage("))
+        assertTrue(source.contains("contentScale = if (extraTallImage) ContentScale.Fit else ContentScale.Crop"))
+    }
+
+    @Test
+    fun feedTabDoubleTapRefreshesWhenBottomNavigationIsExpanded() {
+        assertTrue(source.contains("onFeedDoubleTap = { refreshTimelineFromTop() }"))
+    }
+
+    @Test
+    fun remoteImagesUseBoundedParallelCandidateReads() {
+        assertTrue(source.contains("private val FeedImageLoadSemaphore = Semaphore"))
+        assertTrue(source.contains("loadFirstRemoteBitmap("))
+        assertTrue(source.contains("async(Dispatchers.IO)"))
+    }
+
+    @Test
     fun multiVideoUsesGridAndSingleVideoUsesWidePlayer() {
         assertTrue(source.contains("val mediaGridItems = buildList"))
         assertTrue(source.contains("val showSingleWideVideo = images.isEmpty() && medias.size == 1"))

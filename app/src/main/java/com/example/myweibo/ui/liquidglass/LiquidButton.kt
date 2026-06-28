@@ -65,6 +65,13 @@ internal fun DrawScope.drawLiquidGlassStroke() {
     )
 }
 
+internal fun DrawScope.drawLiquidGlassThemeOverlay(isLightTheme: Boolean) {
+    drawRect(
+        if (isLightTheme) Color.White.copy(alpha = 0.1f)
+        else Color.Black.copy(alpha = 0.1f),
+    )
+}
+
 internal fun Modifier.drawLiquidGlassBorder(shape: Shape): Modifier =
     border(1.dp, LiquidGlassStrokeColor, shape)
 
@@ -80,6 +87,7 @@ fun LiquidButton(
     onDoubleClick: (() -> Unit)? = null,
     content: @Composable RowScope.() -> Unit,
 ) {
+    val isLightTheme = !isSystemInDarkTheme()
     val animationScope = rememberCoroutineScope()
     val interactiveHighlight = remember(animationScope) {
         InteractiveHighlight(animationScope = animationScope)
@@ -148,6 +156,7 @@ fun LiquidButton(
                     if (surfaceColor.isSpecified) {
                         drawRect(surfaceColor)
                     }
+                    drawLiquidGlassThemeOverlay(isLightTheme)
                     drawLiquidGlassStroke()
                 },
             )
@@ -197,6 +206,7 @@ fun SurfaceLiquidCapsule(
                     },
                     onDrawSurface = {
                         drawRect(surfaceColor)
+                        drawLiquidGlassThemeOverlay(isLightTheme)
                         drawLiquidGlassStroke()
                     },
                 ),
@@ -274,6 +284,7 @@ fun TransparentLiquidCapsule(
     content: @Composable BoxScope.() -> Unit,
 ) {
     val shape = if (pill) RoundedCornerShape(percent = 50) else RoundedCornerShape(cornerRadius)
+    val isLightTheme = !isSystemInDarkTheme()
     Box(
         modifier
             .graphicsLayer { clip = false }
@@ -285,7 +296,10 @@ fun TransparentLiquidCapsule(
                     blur(2f.dp.toPx())
                     lens(12f.dp.toPx(), 24f.dp.toPx())
                 },
-                onDrawSurface = { drawLiquidGlassStroke() },
+                onDrawSurface = {
+                    drawLiquidGlassThemeOverlay(isLightTheme)
+                    drawLiquidGlassStroke()
+                },
             ),
         content = content,
     )
@@ -342,6 +356,7 @@ fun SurfaceLiquidMenuCard(
                     },
                     onDrawSurface = {
                         drawRect(surfaceColor)
+                        drawLiquidGlassThemeOverlay(isLightTheme)
                         drawLiquidGlassStroke()
                     },
                 )

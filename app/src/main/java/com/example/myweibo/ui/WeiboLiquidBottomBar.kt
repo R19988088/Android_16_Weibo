@@ -62,6 +62,7 @@ internal fun WeiboLiquidBottomBar(
     selectedTimelineKind: TimelineKind = TimelineKind.Following,
     onTimelineKindChange: (TimelineKind) -> Unit = {},
     onComposeClick: () -> Unit,
+    onFeedDoubleTap: () -> Unit = {},
     timelineMenuContent: @Composable (dismiss: () -> Unit) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -144,6 +145,9 @@ internal fun WeiboLiquidBottomBar(
                             feedTabIndex = feedIndex,
                             lensScale = 2f,
                             onTabLongPress = { onTimelineMenuExpandedChange(true) },
+                            onTabDoubleTap = { index ->
+                                if (tabs[index] == MainTab.Feed) onFeedDoubleTap()
+                            },
                             modifier = Modifier.fillMaxWidth(),
                         ) {
                             tabs.forEachIndexed { index, tab ->
