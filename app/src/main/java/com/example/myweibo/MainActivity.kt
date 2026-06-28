@@ -8,6 +8,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.Color
 import com.example.myweibo.data.AppearanceSettingsStore
 import com.example.myweibo.data.AppThemeMode
 import com.example.myweibo.ui.WeiboApp
@@ -52,12 +53,22 @@ class MainActivity : ComponentActivity() {
         setContent {
             val appearanceSettingsStore = remember { AppearanceSettingsStore(this@MainActivity) }
             var themeMode by remember { mutableStateOf(appearanceSettingsStore.readThemeMode()) }
-            MyWeiboTheme(darkTheme = themeMode == AppThemeMode.Dark) {
+            var accentColorArgb by remember { mutableStateOf(appearanceSettingsStore.readAccentColorArgb()) }
+            val accentColor = accentColorArgb?.let { Color(it.toInt()) }
+            MyWeiboTheme(
+                darkTheme = themeMode == AppThemeMode.Dark,
+                accentColor = accentColor,
+            ) {
                 WeiboApp(
                     themeMode = themeMode,
                     onThemeModeChange = { mode ->
                         themeMode = mode
                         appearanceSettingsStore.writeThemeMode(mode)
+                    },
+                    accentColorArgb = accentColorArgb,
+                    onAccentColorChange = { argb ->
+                        accentColorArgb = argb
+                        appearanceSettingsStore.writeAccentColorArgb(argb)
                     },
                 )
             }

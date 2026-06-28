@@ -71,14 +71,13 @@ fun LiquidBottomTabs(
     gestureController: LiquidBottomTabsGestureController = rememberLiquidBottomTabsGestureController(),
     feedTabIndex: Int = 0,
     lensScale: Float = 1f,
+    accentColor: Color? = null,
     onTabLongPress: (index: Int) -> Unit = {},
     onTabDoubleTap: (index: Int) -> Unit = {},
     content: @Composable RowScope.() -> Unit
 ) {
     val isLightTheme = !isSystemInDarkTheme()
-    val accentColor =
-        if (isLightTheme) TabAccentLight
-        else TabAccentDark
+    val resolvedAccentColor = accentColor ?: if (isLightTheme) TabAccentLight else TabAccentDark
     val surfaceColor = liquidSurfaceColor(isLightTheme)
 
     val tabsBackdrop = rememberLayerBackdrop()
@@ -257,7 +256,7 @@ fun LiquidBottomTabs(
                     clip = false
                     translationX = panelOffset
                 }
-                .drawLiquidGlassBorder(RoundedCornerShape(percent = 50))
+                .drawLiquidNavigatorBorder(RoundedCornerShape(percent = 50))
                 .drawBackdrop(
                     backdrop = backdrop,
                     shape = { RoundedCornerShape(percent = 50) },
@@ -300,7 +299,7 @@ fun LiquidBottomTabs(
                     .graphicsLayer {
                         translationX = panelOffset
                     }
-                    .drawLiquidGlassBorder(RoundedCornerShape(percent = 50))
+                    .drawLiquidNavigatorBorder(RoundedCornerShape(percent = 50))
                     .drawBackdrop(
                         backdrop = backdrop,
                         shape = { RoundedCornerShape(percent = 50) },
@@ -326,7 +325,7 @@ fun LiquidBottomTabs(
                     .height(56f.dp)
                     .fillMaxWidth()
                     .padding(horizontal = 4f.dp)
-                    .graphicsLayer(colorFilter = ColorFilter.tint(accentColor)),
+                    .graphicsLayer(colorFilter = ColorFilter.tint(resolvedAccentColor)),
                 verticalAlignment = Alignment.CenterVertically,
                 content = content
             )
@@ -360,7 +359,7 @@ fun LiquidBottomTabs(
                     },
                     shadow = {
                         val progress = dampedDragAnimation.pressProgress
-                        Shadow(alpha = progress * 1.2f)
+                        Shadow(alpha = progress * 1.8f)
                     },
                     innerShadow = {
                         val progress = dampedDragAnimation.pressProgress

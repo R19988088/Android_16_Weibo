@@ -57,6 +57,7 @@ internal val LocalHazeState = staticCompositionLocalOf<HazeState?> { null }
 internal val LocalLiquidMenuBackdrop = staticCompositionLocalOf<Backdrop?> { null }
 
 internal val LiquidGlassStrokeColor = Color.Black.copy(alpha = 0.3f)
+internal val LiquidNavigatorStrokeColor = Color.Black.copy(alpha = 0.05f)
 
 internal fun DrawScope.drawLiquidGlassStroke() {
     drawRect(
@@ -74,6 +75,9 @@ internal fun DrawScope.drawLiquidGlassThemeOverlay(isLightTheme: Boolean) {
 
 internal fun Modifier.drawLiquidGlassBorder(shape: Shape): Modifier =
     border(1.dp, LiquidGlassStrokeColor, shape)
+
+internal fun Modifier.drawLiquidNavigatorBorder(shape: Shape): Modifier =
+    border(1.dp, LiquidNavigatorStrokeColor, shape)
 
 @Composable
 fun LiquidButton(
@@ -147,7 +151,7 @@ fun LiquidButton(
                     null
                 },
                 shadow = {
-                    Shadow(alpha = 0.24f)
+                    Shadow(alpha = 0.36f)
                 },
                 onDrawSurface = {
                     if (tint.isSpecified) {

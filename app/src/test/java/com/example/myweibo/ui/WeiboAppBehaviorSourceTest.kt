@@ -24,7 +24,8 @@ class WeiboAppBehaviorSourceTest {
         val bottomBarCondition = source.substringBefore("WeiboLiquidBottomBar(")
             .takeLast(500)
         assertFalse(bottomBarCondition.contains("selectedTab != MainTab.Messages"))
-        assertTrue(source.contains("bottomContentPadding = if (messageRoot) 96.dp else 0.dp"))
+        assertTrue(source.contains("topContentPadding = if (messageRoot) 20.dp else topInset"))
+        assertTrue(source.contains("bottomContentPadding = if (messageRoot) 0.dp else 0.dp"))
     }
 
     @Test
@@ -59,6 +60,21 @@ class WeiboAppBehaviorSourceTest {
         assertTrue(source.contains("private val FeedImageLoadSemaphore = Semaphore"))
         assertTrue(source.contains("loadFirstRemoteBitmap("))
         assertTrue(source.contains("async(Dispatchers.IO)"))
+    }
+
+    @Test
+    fun deviceSourceVisibilityUsesMetadataSettingEverywhere() {
+        assertTrue(source.contains("private fun visibleDeviceSource("))
+        assertTrue(source.contains("visibleDeviceSource(item.source, metadataSettings)"))
+        assertFalse(source.contains("listOfNotNull(formatWeiboTime(item.createdAt), item.source)"))
+    }
+
+    @Test
+    fun appearanceSettingsExposeAccentColorAndThemeUsesIt() {
+        assertTrue(source.contains("accentColorArgb: Long?"))
+        assertTrue(source.contains("onAccentColorChange: (Long?) -> Unit"))
+        assertTrue(source.contains("text = \"自定义强调色\""))
+        assertTrue(source.contains("onAccentColorChange(argb)"))
     }
 
     @Test

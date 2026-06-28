@@ -27,7 +27,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -38,8 +37,6 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import com.example.myweibo.R
 import com.example.myweibo.data.TimelineKind
-import com.example.myweibo.ui.theme.TabAccentDark
-import com.example.myweibo.ui.theme.TabAccentLight
 import com.example.myweibo.ui.liquidglass.LiquidBottomTab
 import com.example.myweibo.ui.liquidglass.LiquidBottomTabs
 import com.example.myweibo.ui.liquidglass.LocalLiquidBottomTabBackdropRow
@@ -61,13 +58,13 @@ internal fun WeiboLiquidBottomBar(
     feedTabLabel: String = MainTab.Feed.label,
     selectedTimelineKind: TimelineKind = TimelineKind.Following,
     onTimelineKindChange: (TimelineKind) -> Unit = {},
+    accentColor: Color? = null,
     onComposeClick: () -> Unit,
     onFeedDoubleTap: () -> Unit = {},
     timelineMenuContent: @Composable (dismiss: () -> Unit) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val isLightTheme = MaterialTheme.colorScheme.background.luminance() > 0.5f
-    val accentColor = if (isLightTheme) TabAccentLight else TabAccentDark
+    val resolvedAccentColor = accentColor ?: MaterialTheme.colorScheme.primary
     val unselectedColor = Color.Black
     val density = LocalDensity.current
     val barHeight = 64.dp
@@ -148,14 +145,15 @@ internal fun WeiboLiquidBottomBar(
                             onTabDoubleTap = { index ->
                                 if (tabs[index] == MainTab.Feed) onFeedDoubleTap()
                             },
+                            accentColor = resolvedAccentColor,
                             modifier = Modifier.fillMaxWidth(),
                         ) {
                             tabs.forEachIndexed { index, tab ->
                                 val isBackdropRow = LocalLiquidBottomTabBackdropRow.current
                                 val isSelected = index == selectedIndex
                                 val tabColor = when {
-                                    isBackdropRow -> accentColor
-                                    isSelected -> accentColor
+                                    isBackdropRow -> resolvedAccentColor
+                                    isSelected -> resolvedAccentColor
                                     else -> unselectedColor
                                 }
                                 val tabAlpha = if (!isBackdropRow && isSelected) 0f else 1f
@@ -205,7 +203,7 @@ internal fun WeiboLiquidBottomBar(
                         ) {
                             WeiboTabIcon(
                                 tab = selectedTab,
-                                color = accentColor,
+                                color = resolvedAccentColor,
                                 size = 24.dp,
                             )
                         }
@@ -223,7 +221,7 @@ internal fun WeiboLiquidBottomBar(
             ) {
                 WeiboTabIcon(
                     tab = MainTab.Compose,
-                    color = if (selectedTab == MainTab.Compose) accentColor else unselectedColor,
+                    color = if (selectedTab == MainTab.Compose) resolvedAccentColor else unselectedColor,
                     size = 24.dp,
                 )
             }

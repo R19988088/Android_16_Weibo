@@ -1301,6 +1301,8 @@ fun WeiboApp() {
     WeiboApp(
         themeMode = AppThemeMode.Light,
         onThemeModeChange = {},
+        accentColorArgb = null,
+        onAccentColorChange = {},
     )
 }
 
@@ -1309,6 +1311,8 @@ fun WeiboApp() {
 fun WeiboApp(
     themeMode: AppThemeMode,
     onThemeModeChange: (AppThemeMode) -> Unit,
+    accentColorArgb: Long?,
+    onAccentColorChange: (Long?) -> Unit,
 ) {
     val context = LocalContext.current
     val session = remember { WeiboWebSession(context) }
@@ -3906,6 +3910,7 @@ fun WeiboApp(
                     onFeedDoubleTap = { refreshTimelineFromTop() },
                     feedTabLabel = timelineKind.label,
                     selectedTimelineKind = timelineKind,
+                    accentColor = accentColorArgb?.let { Color(it.toInt()) },
                     onTimelineKindChange = { kind ->
                         dismissFollowListForTabSwitch()
                         selectedTab = MainTab.Feed
@@ -4565,6 +4570,19 @@ private fun EmoticonText(
     }
 
     val annotatedString = buildAnnotatedString {
+        fun appendTextWithParagraphSpacing(value: String) {
+            value.split('\n').forEachIndexed { index, part ->
+                if (index > 0) {
+                    append('\n')
+                    withStyle(SpanStyle(fontSize = 5.sp)) {
+                        append('\u200A')
+                    }
+                    append('\n')
+                }
+                append(part)
+            }
+        }
+
         leadingAuthorName?.let { authorName ->
             val authorLabel = "@$authorName\uFF1A"
             val authorStyle = SpanStyle(
@@ -4593,7 +4611,7 @@ private fun EmoticonText(
         val tokenRegex = buildStatusTokenRegex(inlineImageLinks, urlEntities)
         tokenRegex.findAll(text).forEach { match ->
             if (match.range.first > last) {
-                append(text.substring(last, match.range.first))
+                appendTextWithParagraphSpacing(text.substring(last, match.range.first))
             }
             val token = match.value
             when {
@@ -4697,12 +4715,12 @@ private fun EmoticonText(
                         }
                     }
                 }
-                else -> append(token)
+                else -> appendTextWithParagraphSpacing(token)
             }
             last = match.range.last + 1
         }
         if (last < text.length) {
-            append(text.substring(last))
+            appendTextWithParagraphSpacing(text.substring(last))
         }
         trailingLabel?.let { label ->
             append('\u00A0')
@@ -5222,9 +5240,7 @@ private fun AuthorRow(
     val locationText = customLocation?.let { "\u6765\u81EA$it" } ?: item.ipLocation
     val metadataText = listOfNotNull(
         formatWeiboTime(item.createdAt),
-        item.source
-            ?.takeIf { metadataSettings.showDeviceSource && it.isNotBlank() }
-            ?.let { "\u6765\u81EA $it" },
+        visibleDeviceSource(item.source, metadataSettings),
         "\u5DF2\u7F16\u8F91".takeIf { item.isEdited },
         locationText,
     ).joinToString(" ")
@@ -5263,7 +5279,10 @@ private fun AuthorRow(
             }
             if (false) {
             Text(
-                text = listOfNotNull(formatWeiboTime(item.createdAt), item.source).joinToString(" \u00B7 "),
+                text = listOfNotNull(
+                    formatWeiboTime(item.createdAt),
+                    visibleDeviceSource(item.source, metadataSettings),
+                ).joinToString(" \u00B7 "),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
@@ -5293,6 +5312,15 @@ private fun singleImageDisplayAspectRatio(
     val minAspectFromHeightCap = 1f / maxHeightToWidth
     return naturalAspect.coerceAtLeast(minAspectFromHeightCap).coerceAtMost(3f)
 }
+
+private fun visibleDeviceSource(
+    source: String?,
+    metadataSettings: MetadataDisplaySettings,
+): String? =
+    source
+        ?.trim()
+        ?.takeIf { metadataSettings.showDeviceSource && it.isNotBlank() }
+        ?.let { "\u6765\u81EA $it" }
 
 private fun isExtraTallSingleImage(width: Int, height: Int): Boolean =
     width > 0 && height > 0 && width.toFloat() / height < ExtraTallImageRatioThreshold
@@ -11488,8 +11516,8 @@ private fun MessagesScreen(
         pageUrl = "https://m.weibo.cn/message",
         onRootBack = onRootBack,
         scrollToTopOnPageFinished = { url -> url?.contains("/message", ignoreCase = true) != true },
-        topContentPadding = if (messageRoot) 0.dp else topInset,
-        bottomContentPadding = if (messageRoot) 96.dp else 0.dp,
+        topContentPadding = if (messageRoot) 20.dp else topInset,
+        bottomContentPadding = if (messageRoot) 0.dp else 0.dp,
         onUrlChanged = { currentUrl = it },
         pageScript = { view, url ->
             view.applyMessagesPageChrome(messageRoot = isMessageRootUrl(url))
@@ -11519,8 +11547,8 @@ private fun WebView.applyMessagesPageChrome(messageRoot: Boolean) {
             style.textContent = ${if (messageRoot) {
                 """
                 '.m-top-nav,.lite-topbar,.lite-page-top,.lite-page-tabbar,.m-tab-bar,.nav-top,.wb-top,.toolbar-wrap{display:none!important;}' +
-                'body{padding-top:0!important;padding-bottom:0!important;}' +
-                '.m-container-max,.m-container,.lite-page-wrap{padding-top:0!important;padding-bottom:0!important;}'
+                'html,body{background:#fff!important;padding-top:0!important;padding-bottom:0!important;}' +
+                '.m-container-max,.m-container,.lite-page-wrap,.lite-page-editor{background:#fff!important;padding-top:0!important;padding-bottom:0!important;}'
                 """
             } else {
                 "''"
@@ -11810,6 +11838,8 @@ private fun MineScreen(
                 onBackgroundPlaybackChange = onBackgroundPlaybackChange,
                 themeMode = themeMode,
                 onThemeModeChange = onThemeModeChange,
+                accentColorArgb = accentColorArgb,
+                onAccentColorChange = onAccentColorChange,
                 feedThumbnailQuality = feedThumbnailQuality,
                 onFeedThumbnailQualityChange = onFeedThumbnailQualityChange,
                 metadataDisplaySettings = metadataDisplaySettings,
@@ -12266,6 +12296,8 @@ private fun SettingsScreen(
     onBackgroundPlaybackChange: (Boolean) -> Unit,
     themeMode: AppThemeMode,
     onThemeModeChange: (AppThemeMode) -> Unit,
+    accentColorArgb: Long?,
+    onAccentColorChange: (Long?) -> Unit,
     feedThumbnailQuality: FeedThumbnailQuality,
     onFeedThumbnailQualityChange: (FeedThumbnailQuality) -> Unit,
     metadataDisplaySettings: MetadataDisplaySettings,
@@ -12332,6 +12364,8 @@ private fun SettingsScreen(
                     SettingsAppearanceCard(
                         themeMode = themeMode,
                         onThemeModeChange = onThemeModeChange,
+                        accentColorArgb = accentColorArgb,
+                        onAccentColorChange = onAccentColorChange,
                     )
                 }
                 item {
@@ -12824,7 +12858,19 @@ private fun SettingsMetadataCard(
 private fun SettingsAppearanceCard(
     themeMode: AppThemeMode,
     onThemeModeChange: (AppThemeMode) -> Unit,
+    accentColorArgb: Long?,
+    onAccentColorChange: (Long?) -> Unit,
 ) {
+    val accentOptions = remember {
+        listOf(
+            null to "默认",
+            0xFFFF4F9AL to "粉",
+            0xFF3478F6L to "蓝",
+            0xFF34C759L to "绿",
+            0xFFFF9500L to "橙",
+            0xFFAF52DEL to "紫",
+        )
+    }
     SettingsPlainCard {
         Column(
             modifier = Modifier
@@ -12869,6 +12915,46 @@ private fun SettingsAppearanceCard(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
+                    }
+                }
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    text = "自定义强调色",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    items(accentOptions) { (argb, label) ->
+                        val selected = accentColorArgb == argb
+                        val swatchColor = argb?.let { Color(it.toInt()) } ?: MaterialTheme.colorScheme.primary
+                        Column(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable { onAccentColorChange(argb) }
+                                .padding(horizontal = 4.dp, vertical = 2.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(30.dp)
+                                    .clip(CircleShape)
+                                    .background(swatchColor)
+                                    .border(
+                                        width = if (selected) 2.dp else 1.dp,
+                                        color = if (selected) MaterialTheme.colorScheme.onSurface else Color.Black.copy(alpha = 0.12f),
+                                        shape = CircleShape,
+                                    ),
+                            )
+                            Text(
+                                text = label,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
                 }
             }

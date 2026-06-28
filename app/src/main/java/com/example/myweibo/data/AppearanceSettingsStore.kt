@@ -23,12 +23,30 @@ class AppearanceSettingsStore(context: Context) {
     fun readThemeMode(): AppThemeMode =
         AppThemeMode.fromStorage(prefs.getString(KEY_THEME_MODE, null))
 
+    fun readAccentColorArgb(): Long? =
+        if (prefs.contains(KEY_ACCENT_COLOR_ARGB)) {
+            prefs.getLong(KEY_ACCENT_COLOR_ARGB, 0L)
+        } else {
+            null
+        }
+
     fun writeThemeMode(mode: AppThemeMode) {
         prefs.edit().putString(KEY_THEME_MODE, mode.storageValue).apply()
+    }
+
+    fun writeAccentColorArgb(argb: Long?) {
+        prefs.edit().apply {
+            if (argb == null) {
+                remove(KEY_ACCENT_COLOR_ARGB)
+            } else {
+                putLong(KEY_ACCENT_COLOR_ARGB, argb)
+            }
+        }.apply()
     }
 
     private companion object {
         const val PREFS_NAME = "weibo_app_prefs"
         const val KEY_THEME_MODE = "theme_mode"
+        const val KEY_ACCENT_COLOR_ARGB = "accent_color_argb"
     }
 }
