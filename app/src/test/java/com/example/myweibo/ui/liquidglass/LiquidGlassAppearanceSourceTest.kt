@@ -13,9 +13,11 @@ class LiquidGlassAppearanceSourceTest {
     @Test
     fun bottomNavigationUsesBlackStrokeAndStrongerShadow() {
         val tabsSource = readSource("com/example/myweibo/ui/liquidglass/LiquidBottomTabs.kt")
+        val buttonSource = readSource("com/example/myweibo/ui/liquidglass/LiquidButton.kt")
 
-        assertTrue(tabsSource.contains("Color.Black.copy(alpha = 0.3f)"))
-        assertTrue(tabsSource.contains("Stroke(width = 1f)"))
+        assertTrue(buttonSource.contains("Color.Black.copy(alpha = 0.3f)"))
+        assertTrue(buttonSource.contains("Stroke(width = 1.dp.toPx())"))
+        assertTrue(tabsSource.contains("drawLiquidGlassStroke()"))
         assertTrue(tabsSource.contains("Shadow(alpha = progress * 1.2f)"))
     }
 
@@ -25,6 +27,6 @@ class LiquidGlassAppearanceSourceTest {
 
         assertTrue(buttonSource.contains("Shadow(alpha = 0.24f)"))
         assertTrue(buttonSource.contains("Color.Black.copy(alpha = 0.3f)"))
-        assertTrue(buttonSource.contains("Stroke(width = 1f)"))
+        assertTrue(buttonSource.contains("Stroke(width = 1.dp.toPx())"))
     }
 }
