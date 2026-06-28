@@ -1418,7 +1418,7 @@ class WeiboWebSession(context: Context) {
     private suspend fun postMssStatus(params: Map<String, String>): String =
         nativePostAbsoluteForm(
             url = "$WEIBO_MOBILE_API_BASE/2/statuses/send",
-            params = withMobileApiParams(params),
+            params = params.withMobileApiParams(),
             referer = "https://m.weibo.cn/",
             origin = "https://m.weibo.cn",
         )
