@@ -86,6 +86,7 @@ fun LiquidBottomTabs(
         modifier.graphicsLayer { clip = false },
         contentAlignment = Alignment.CenterStart
     ) {
+        val resolvedSelectedTabIndex = selectedTabIndex()
         val density = LocalDensity.current
         val horizontalPaddingPx = with(density) { 4f.dp.toPx() }
         val contentWidthPx = (constraints.maxWidth.toFloat() - horizontalPaddingPx * 2f)
@@ -105,8 +106,8 @@ fun LiquidBottomTabs(
 
         val isLtr = LocalLayoutDirection.current == LayoutDirection.Ltr
         val animationScope = rememberCoroutineScope()
-        var currentIndex by remember { mutableIntStateOf(selectedTabIndex()) }
-        var gestureTargetIndex by remember { mutableIntStateOf(selectedTabIndex()) }
+        var currentIndex by remember { mutableIntStateOf(resolvedSelectedTabIndex) }
+        var gestureTargetIndex by remember { mutableIntStateOf(resolvedSelectedTabIndex) }
         var isUserGesturing by remember { mutableStateOf(false) }
         var lastGesturePosition by remember { mutableStateOf(Offset.Zero) }
         val barWidthPx = constraints.maxWidth.toFloat()
@@ -135,7 +136,7 @@ fun LiquidBottomTabs(
         val dampedDragAnimation = remember(animationScope, tabsCount, tabWidth, barWidthPx, isLtr) {
             DampedDragAnimation(
                 animationScope = animationScope,
-                initialValue = selectedTabIndex().toFloat(),
+                initialValue = resolvedSelectedTabIndex.toFloat(),
                 valueRange = 0f..(tabsCount - 1).toFloat(),
                 visibilityThreshold = 0.001f,
                 initialScale = 1f,
@@ -221,8 +222,8 @@ fun LiquidBottomTabs(
             }
         }
 
-        LaunchedEffect(Unit) {
-            snapshotFlow { isUserGesturing to selectedTabIndex() }
+        LaunchedEffect(resolvedSelectedTabIndex) {
+            snapshotFlow { isUserGesturing to resolvedSelectedTabIndex }
                 .distinctUntilChanged()
                 .collectLatest { (gesturing, index) ->
                     if (gesturing) return@collectLatest
