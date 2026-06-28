@@ -29,6 +29,21 @@ class WeiboAppBehaviorSourceTest {
     }
 
     @Test
+    fun messageAvatarClicksNavigateToProfiles() {
+        assertTrue(source.contains("installMessageAvatarProfileNavigation()"))
+        assertTrue(source.contains("window.__myweiboMessageAvatarProfileNavigation"))
+        assertTrue(source.contains("profileUrlFromMessageAvatar"))
+        assertTrue(source.contains("document.addEventListener('click'"))
+        assertTrue(source.contains("https://m.weibo.cn/profile/"))
+    }
+
+    @Test
+    fun paragraphSpacingIsReducedFortyPercent() {
+        assertTrue(source.contains("SpanStyle(fontSize = 3.sp)"))
+        assertFalse(source.contains("SpanStyle(fontSize = 5.sp)"))
+    }
+
+    @Test
     fun webTabsStillProvideBottomGlassBackdrop() {
         assertFalse(source.contains("webTabBackdropExcluded"))
         assertTrue(source.contains("WebTabBottomGlassBackdropSource("))

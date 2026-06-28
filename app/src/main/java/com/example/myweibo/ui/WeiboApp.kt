@@ -4639,7 +4639,7 @@ private fun EmoticonText(
             value.split('\n').forEachIndexed { index, part ->
                 if (index > 0) {
                     append('\n')
-                    withStyle(SpanStyle(fontSize = 5.sp)) {
+                    withStyle(SpanStyle(fontSize = 3.sp)) {
                         append('\u200A')
                     }
                     append('\n')
@@ -11586,6 +11586,7 @@ private fun MessagesScreen(
         onUrlChanged = { currentUrl = it },
         pageScript = { view, url ->
             view.applyMessagesPageChrome(messageRoot = isMessageRootUrl(url))
+            view.installMessageAvatarProfileNavigation()
         },
         active = active,
     )
@@ -11618,6 +11619,88 @@ private fun WebView.applyMessagesPageChrome(messageRoot: Boolean) {
             } else {
                 "''"
             }};
+        })();
+        """.trimIndent(),
+        null,
+    )
+}
+
+private fun WebView.installMessageAvatarProfileNavigation() {
+    evaluateJavascript(
+        """
+        (function() {
+            if (window.__myweiboMessageAvatarProfileNavigation) return;
+            window.__myweiboMessageAvatarProfileNavigation = true;
+
+            function normalizedText(value) {
+                if (!value) return '';
+                try {
+                    return decodeURIComponent(String(value));
+                } catch (e) {
+                    return String(value);
+                }
+            }
+
+            function profileUidFromValue(value) {
+                var text = normalizedText(value);
+                var patterns = [
+                    /(?:^|[?&#])(?:uid|user_id|profile_uid|target_uid|recipient_id|sender_id)=([0-9]{4,})/i,
+                    /(?:\/profile\/|\/u\/)([0-9]{4,})/i,
+                    /100505([0-9]{4,})/i
+                ];
+                for (var i = 0; i < patterns.length; i += 1) {
+                    var match = text.match(patterns[i]);
+                    if (match && match[1]) return match[1];
+                }
+                return /^[0-9]{4,}$/.test(text) ? text : '';
+            }
+
+            function profileUrlFromMessageAvatar(target) {
+                var node = target;
+                for (var depth = 0; node && depth < 10; depth += 1, node = node.parentElement) {
+                    if (node.tagName === 'A' && node.href) {
+                        var linkUid = profileUidFromValue(node.href);
+                        if (linkUid) return 'https://m.weibo.cn/profile/' + linkUid;
+                    }
+                    if (!node.attributes) continue;
+                    for (var i = 0; i < node.attributes.length; i += 1) {
+                        var attr = node.attributes[i];
+                        if (!attr || !attr.value) continue;
+                        var uid = profileUidFromValue(attr.value);
+                        if (uid) return 'https://m.weibo.cn/profile/' + uid;
+                    }
+                }
+                return '';
+            }
+
+            function isMessageAvatarTarget(target) {
+                var node = target;
+                for (var depth = 0; node && depth < 4; depth += 1, node = node.parentElement) {
+                    var probe = [
+                        node.tagName,
+                        node.id,
+                        node.className && node.className.baseVal ? node.className.baseVal : node.className,
+                        node.getAttribute && node.getAttribute('src'),
+                        node.getAttribute && node.getAttribute('alt')
+                    ].join(' ').toLowerCase();
+                    if (/(emoji|emoticon|sticker|photo|picture|media|album|content-img|msg-img)/.test(probe)) {
+                        return false;
+                    }
+                    if (/(avatar|avator|head|face|portrait|profile)/.test(probe)) {
+                        return true;
+                    }
+                }
+                return false;
+            }
+
+            document.addEventListener('click', function(event) {
+                if (!isMessageAvatarTarget(event.target)) return;
+                var url = profileUrlFromMessageAvatar(event.target);
+                if (!url) return;
+                event.preventDefault();
+                event.stopPropagation();
+                window.location.href = url;
+            }, true);
         })();
         """.trimIndent(),
         null,
