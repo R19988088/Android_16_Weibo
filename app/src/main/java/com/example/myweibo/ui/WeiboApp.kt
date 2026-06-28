@@ -90,6 +90,7 @@ import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.wrapContentWidth
@@ -253,6 +254,9 @@ import com.example.myweibo.data.CommentSort
 import com.example.myweibo.data.CommentSortStore
 import com.example.myweibo.data.EmoticonCacheStore
 import com.example.myweibo.data.AppThemeMode
+import com.example.myweibo.data.ComposeMediaKind
+import com.example.myweibo.data.ComposeVisibility
+import com.example.myweibo.data.toPostRequest
 import com.example.myweibo.data.MentionSuggestionCacheStore
 import com.example.myweibo.data.SearchSettingsStore
 import com.example.myweibo.data.MentionCandidate
@@ -1407,6 +1411,7 @@ fun WeiboApp(
     var commentComposeTarget by remember { mutableStateOf<CommentComposeTarget?>(null) }
     var commentSubmitting by remember { mutableStateOf(false) }
     var commentSubmitJob by remember { mutableStateOf<Job?>(null) }
+    var statusSubmitting by remember { mutableStateOf(false) }
     var nestedCommentsLoadingIds by remember { mutableStateOf(setOf<String>()) }
     var detailContentSection by remember { mutableStateOf(DetailContentSection.Comments) }
     var reposts by remember { mutableStateOf<List<CommentItem>>(emptyList()) }
@@ -2905,6 +2910,38 @@ fun WeiboApp(
         commentSubmitJob = job
     }
 
+    fun submitStatus(text: String, mediaUris: List<Uri>, mediaKind: ComposeMediaKind, visibility: ComposeVisibility) {
+        if (statusSubmitting) return
+        scope.launch {
+            statusSubmitting = true
+            try {
+                runCatching {
+                    withTimeout(120_000) {
+                        val uploads = when {
+                            mediaUris.isEmpty() -> emptyList()
+                            mediaKind == ComposeMediaKind.Image -> coroutineScope {
+                                mediaUris.take(9).map { uri ->
+                                    async { session.uploadComposeImage(uri) }
+                                }.awaitAll()
+                            }
+                            else -> listOf(session.uploadComposeVideo(mediaUris.first()))
+                        }
+                        session.postStatus(uploads.toPostRequest(text = text, visibility = visibility))
+                    }
+                }.onSuccess {
+                    operationCapsuleHint = "微博已发布"
+                    selectedTab = MainTab.Feed
+                    refreshTimelineFromTop()
+                }.onFailure { error ->
+                    if (error is CancellationException && error !is TimeoutCancellationException) throw error
+                    showMessage("微博发布失败", error.message ?: "微博接口无响应")
+                }
+            } finally {
+                statusSubmitting = false
+            }
+        }
+    }
+
     fun reloadReposts() {
         val item = selectedItem ?: return
         scope.launch {
@@ -3390,10 +3427,11 @@ fun WeiboApp(
                         .zIndex(if (composeWebVisible) 2f else -10f)
                         .blockHiddenTouches(composeWebVisible),
                 ) {
-                    MobileWeiboWebScreen(
-                        pageUrl = "https://m.weibo.cn/compose/",
-                        onRootBack = { selectedTab = MainTab.Feed },
+                    NativeComposeScreen(
                         active = composeWebVisible,
+                        submitting = statusSubmitting,
+                        onRootBack = { selectedTab = MainTab.Feed },
+                        onSubmit = ::submitStatus,
                     )
                 }
             }
@@ -9351,6 +9389,241 @@ private fun updateCommentTree(
         comment.comments.isNotEmpty() ->
             comment.copy(comments = updateCommentTree(comment.comments, commentId, transform))
         else -> comment
+    }
+}
+
+@Composable
+private fun NativeComposeScreen(
+    active: Boolean,
+    submitting: Boolean,
+    onRootBack: () -> Unit,
+    onSubmit: (String, List<Uri>, ComposeMediaKind, ComposeVisibility) -> Unit,
+) {
+    var text by remember { mutableStateOf(TextFieldValue("")) }
+    var mediaKind by remember { mutableStateOf(ComposeMediaKind.Image) }
+    var mediaUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
+    var visibility by remember { mutableStateOf(ComposeVisibility.Public) }
+    val focusRequester = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
+    val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
+        mediaKind = ComposeMediaKind.Image
+        mediaUris = uris.take(9)
+    }
+    val videoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        uri?.let {
+            mediaKind = ComposeMediaKind.Video
+            mediaUris = listOf(it)
+        }
+    }
+    val canSubmit = !submitting && (text.text.trim().isNotBlank() || mediaUris.isNotEmpty())
+
+    BackHandler(enabled = active) {
+        focusManager.clearFocus()
+        keyboard?.hide()
+        onRootBack()
+    }
+
+    LaunchedEffect(active) {
+        if (active) {
+            delay(120)
+            runCatching { focusRequester.requestFocus() }
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .padding(start = 18.dp, end = 18.dp, top = 14.dp, bottom = 110.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            TextButton(
+                enabled = !submitting,
+                onClick = {
+                    focusManager.clearFocus()
+                    keyboard?.hide()
+                    onRootBack()
+                },
+            ) {
+                Text("取消")
+            }
+            Text(
+                text = "发微博",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Button(
+                enabled = canSubmit,
+                onClick = {
+                    focusManager.clearFocus()
+                    keyboard?.hide()
+                    onSubmit(text.text, mediaUris, mediaKind, visibility)
+                },
+            ) {
+                Text(if (submitting) "发布中" else "发布")
+            }
+        }
+
+        BasicTextField(
+            value = text,
+            onValueChange = { value ->
+                text = if (value.text.length <= 2000) value else value.copy(text = value.text.take(2000))
+            },
+            enabled = !submitting,
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 180.dp)
+                .focusRequester(focusRequester),
+            textStyle = MaterialTheme.typography.bodyLarge.copy(
+                color = MaterialTheme.colorScheme.onSurface,
+                lineHeight = 26.sp,
+            ),
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
+            decorationBox = { innerTextField ->
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.58f))
+                        .padding(14.dp),
+                ) {
+                    if (text.text.isBlank()) {
+                        Text(
+                            text = "分享新鲜事",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.62f),
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                    }
+                    innerTextField()
+                }
+            },
+        )
+
+        if (mediaUris.isNotEmpty()) {
+            if (mediaKind == ComposeMediaKind.Image) {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(mediaUris, key = { it.toString() }) { uri ->
+                        Box {
+                            LocalUriThumbnail(
+                                uri = uri,
+                                modifier = Modifier
+                                    .size(82.dp)
+                                    .clip(RoundedCornerShape(10.dp)),
+                            )
+                            ComposeMediaRemoveButton(
+                                modifier = Modifier.align(Alignment.TopEnd),
+                                onClick = { mediaUris = mediaUris - uri },
+                            )
+                        }
+                    }
+                }
+            } else {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.72f))
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(
+                        text = "已选择 1 个视频",
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    ComposeMediaRemoveButton(onClick = { mediaUris = emptyList() })
+                }
+            }
+        }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            NativeComposeActionChip(
+                label = "图片",
+                enabled = !submitting,
+                onClick = { imagePicker.launch("image/*") },
+            )
+            NativeComposeActionChip(
+                label = "视频",
+                enabled = !submitting,
+                onClick = { videoPicker.launch("video/*") },
+            )
+        }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ComposeVisibility.entries.forEach { item ->
+                FilterChip(
+                    selected = visibility == item,
+                    enabled = !submitting,
+                    onClick = { visibility = item },
+                    label = { Text(item.label) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun NativeComposeActionChip(
+    label: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(999.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = if (enabled) 0.72f else 0.36f))
+            .clickable(
+                enabled = enabled,
+                indication = null,
+                interactionSource = remember { MutableInteractionSource() },
+                onClick = onClick,
+            )
+            .padding(horizontal = 14.dp, vertical = 9.dp),
+    ) {
+        Text(
+            text = label,
+            color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.42f),
+            fontSize = 14.sp,
+            lineHeight = 17.sp,
+        )
+    }
+}
+
+@Composable
+private fun ComposeMediaRemoveButton(
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = modifier
+            .padding(4.dp)
+            .size(22.dp)
+            .clip(CircleShape)
+            .background(Color.Black.copy(alpha = 0.54f))
+            .clickable(
+                indication = null,
+                interactionSource = remember { MutableInteractionSource() },
+                onClick = onClick,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = "×",
+            color = Color.White,
+            fontSize = 16.sp,
+            lineHeight = 16.sp,
+            textAlign = TextAlign.Center,
+        )
     }
 }
 

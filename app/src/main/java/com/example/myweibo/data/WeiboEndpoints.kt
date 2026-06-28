@@ -8,6 +8,8 @@ object WeiboEndpoints {
     const val STATUS_COMMENTS = "/ajax/statuses/buildComments"
     const val COMMENT_CREATE = "/ajax/comments/create"
     const val COMMENT_REPLY = "/ajax/comments/reply"
+    const val STATUS_CREATE = "/ajax/statuses/update"
+    const val STATUS_DESTROY = "/ajax/statuses/destroy"
     const val STATUS_LONG_TEXT = "/ajax/statuses/longtext"
     const val STATUS_DETAIL = "/ajax/statuses/show"
     const val STATUS_REPOST_TIMELINE = "/ajax/statuses/repostTimeline"
