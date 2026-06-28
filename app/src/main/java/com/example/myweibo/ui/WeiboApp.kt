@@ -10733,17 +10733,17 @@ private fun HomeTopProgressiveBlur(
     modifier: Modifier = Modifier,
 ) {
     val hazeState = LocalHazeState.current
-    val surface = MaterialTheme.colorScheme.surface
+    val background = MaterialTheme.colorScheme.background
     if (hazeState != null) {
         Box(
             modifier = modifier
                 .clipToBounds()
-                .background(surface.copy(alpha = 0.10f))
+                .background(background.copy(alpha = 0.10f))
                 .hazeEffect(
                     state = hazeState,
                     style = HazeStyle(
-                        backgroundColor = surface,
-                        tint = HazeTint(surface.copy(alpha = 0.42f)),
+                        backgroundColor = background,
+                        tint = HazeTint(background.copy(alpha = 0.42f)),
                         blurRadius = 24.dp,
                     ),
                 ) {
@@ -10758,10 +10758,9 @@ private fun HomeTopProgressiveBlur(
         Box(
             modifier = modifier.background(
                 Brush.verticalGradient(
-                    0f to surface.copy(alpha = 0.92f),
-                    0.42f to surface.copy(alpha = 0.62f),
-                    0.78f to surface.copy(alpha = 0.18f),
-                    1f to surface.copy(alpha = 0f),
+                    0f to background.copy(alpha = 0.92f),
+                    0.7f to background.copy(alpha = 0.58f),
+                    1f to background.copy(alpha = 0f),
                 ),
             ),
         )

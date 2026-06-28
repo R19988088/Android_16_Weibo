@@ -112,6 +112,7 @@ fun LiquidButton(
     Row(
         modifier
             .graphicsLayer { clip = false }
+            .drawLiquidGlassBorder(RoundedCornerShape(percent = 50))
             .drawBackdrop(
                 backdrop = backdrop,
                 shape = { RoundedCornerShape(percent = 50) },
@@ -157,7 +158,6 @@ fun LiquidButton(
                         drawRect(surfaceColor)
                     }
                     drawLiquidGlassThemeOverlay(isLightTheme)
-                    drawLiquidGlassStroke()
                 },
             )
             .then(interactionModifier)

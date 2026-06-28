@@ -28,6 +28,14 @@ class WeiboAppBehaviorSourceTest {
     }
 
     @Test
+    fun homeTopKeepsProgressiveBlurAndWhiteSearchCapsule() {
+        assertTrue(source.contains("HomeTopProgressiveBlur("))
+        assertTrue(source.contains("HazeProgressive.verticalGradient("))
+        assertTrue(source.contains(".background(Color.White.copy(alpha = 0.94f))"))
+        assertTrue(source.contains(".border(0.5.dp, HintCapsuleBorderColor, RoundedCornerShape(percent = 50))"))
+    }
+
+    @Test
     fun singleTallImageAllowsOriginalRatioUntilOneToFive() {
         assertTrue(source.contains("private const val SingleImageMaxHeightToWidth = 5f"))
         assertTrue(source.contains("return naturalAspect.coerceAtLeast(minAspectFromHeightCap).coerceAtMost(3f)"))

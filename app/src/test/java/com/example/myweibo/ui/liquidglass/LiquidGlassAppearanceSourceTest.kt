@@ -17,7 +17,7 @@ class LiquidGlassAppearanceSourceTest {
 
         assertTrue(buttonSource.contains("Color.Black.copy(alpha = 0.3f)"))
         assertTrue(buttonSource.contains("Stroke(width = 1.dp.toPx())"))
-        assertTrue(tabsSource.contains("drawLiquidGlassStroke()"))
+        assertTrue(tabsSource.contains(".drawLiquidGlassBorder(RoundedCornerShape(percent = 50))"))
         assertTrue(tabsSource.contains("drawLiquidGlassThemeOverlay(isLightTheme)"))
         assertTrue(tabsSource.contains("Shadow(alpha = progress * 1.2f)"))
     }
