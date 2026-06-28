@@ -24,8 +24,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.isSpecified
 import androidx.compose.ui.input.pointer.pointerInput
@@ -41,6 +43,7 @@ import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.lens
 import com.kyant.backdrop.effects.vibrancy
+import com.kyant.backdrop.shadow.Shadow
 import dev.chrisbanes.haze.HazeState
 import kotlin.math.abs
 import kotlin.math.atan2
@@ -120,6 +123,9 @@ fun LiquidButton(
                 } else {
                     null
                 },
+                shadow = {
+                    Shadow(alpha = 0.24f)
+                },
                 onDrawSurface = {
                     if (tint.isSpecified) {
                         drawRect(tint, blendMode = BlendMode.Hue)
@@ -128,6 +134,11 @@ fun LiquidButton(
                     if (surfaceColor.isSpecified) {
                         drawRect(surfaceColor)
                     }
+                    drawRoundRect(
+                        color = Color.Black.copy(alpha = 0.3f),
+                        cornerRadius = CornerRadius(size.height / 2f, size.height / 2f),
+                        style = Stroke(width = 1f),
+                    )
                 },
             )
             .then(interactionModifier)

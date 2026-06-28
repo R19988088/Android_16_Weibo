@@ -276,6 +276,8 @@ import com.example.myweibo.data.MediaType
 import com.example.myweibo.data.MineCacheStore
 import com.example.myweibo.data.FeedThumbnailQuality
 import com.example.myweibo.data.ImageSettingsStore
+import com.example.myweibo.data.MetadataDisplaySettings
+import com.example.myweibo.data.MetadataDisplaySettingsStore
 import com.example.myweibo.data.PlaybackSettingsStore
 import com.example.myweibo.data.MinePostsCache
 import com.example.myweibo.data.NativeUiMessage
@@ -469,7 +471,7 @@ private val FeedCardSectionSpacing = 10.dp
 private val FeedCardItemSpacing = 8.dp
 private val HomeTopModuleHeight = 52.dp
 private val HomeTopModuleBottomGap = 12.dp
-private const val SingleImageMaxHeightToWidth = 0.7f
+private const val SingleImageMaxHeightToWidth = 5f
 private const val SingleImageMaxWidthFraction = 0.7f
 private const val VideoMaxHeightToWidth = 1f
 private val VideoControlCapsuleShape = RoundedCornerShape(percent = 50)
@@ -808,6 +810,7 @@ private fun FeedImage.albumStatusCacheKey(): String =
     statusId?.takeIf { it.isNotBlank() } ?: largeUrl
 
 private val LocalVideoPlaybackCoordinator = staticCompositionLocalOf { VideoPlaybackCoordinator() }
+private val LocalMetadataDisplaySettings = staticCompositionLocalOf { MetadataDisplaySettings() }
 private val LocalUiMessenger = staticCompositionLocalOf<(String, String) -> Unit> { { _, _ -> } }
 private val LocalTopicClickHandler = staticCompositionLocalOf<((String) -> Unit)?> { null }
 
@@ -1255,6 +1258,7 @@ fun WeiboApp(
     val searchSettingsStore = remember { SearchSettingsStore(context) }
     val playbackSettingsStore = remember { PlaybackSettingsStore(context) }
     val imageSettingsStore = remember { ImageSettingsStore(context) }
+    val metadataDisplaySettingsStore = remember { MetadataDisplaySettingsStore(context) }
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     val feedListState = rememberLazyListState()
@@ -1304,6 +1308,7 @@ fun WeiboApp(
     var commentSort by remember { mutableStateOf(commentSortStore.read()) }
     var backgroundPlaybackEnabled by remember { mutableStateOf(playbackSettingsStore.readBackgroundPlaybackEnabled()) }
     var feedThumbnailQuality by remember { mutableStateOf(imageSettingsStore.readThumbnailQuality()) }
+    var metadataDisplaySettings by remember { mutableStateOf(metadataDisplaySettingsStore.read()) }
     var mediaPreview by remember { mutableStateOf<MediaPreviewRequest?>(null) }
     var searchPendingQuery by remember { mutableStateOf<String?>(null) }
     var searchPendingMode by remember { mutableStateOf<SearchMode?>(null) }
@@ -3192,6 +3197,7 @@ fun WeiboApp(
         LocalVideoPlaybackCoordinator provides videoPlaybackCoordinator,
         LocalUiMessenger provides { title, detail -> showMessage(title, detail) },
         LocalTopicClickHandler provides ::openSearchTopic,
+        LocalMetadataDisplaySettings provides metadataDisplaySettings,
     ) {
     MyWeiboScaffold(
         snackbarHostState = snackbarHostState,
@@ -3254,7 +3260,7 @@ fun WeiboApp(
                 ) {
                     MobileWeiboWebScreen(
                         pageUrl = "https://m.weibo.cn/compose/",
-                        onRootBack = ::handleRootBackPress,
+                        onRootBack = { selectedTab = MainTab.Feed },
                         active = composeWebVisible,
                     )
                 }
@@ -3606,6 +3612,11 @@ fun WeiboApp(
                                     feedThumbnailQuality = quality
                                     imageSettingsStore.writeThumbnailQuality(quality)
                                 },
+                                metadataDisplaySettings = metadataDisplaySettings,
+                                onMetadataDisplaySettingsChange = { settings ->
+                                    metadataDisplaySettings = settings
+                                    metadataDisplaySettingsStore.write(settings)
+                                },
                             )
                         }
 
@@ -3792,8 +3803,7 @@ fun WeiboApp(
             if (
                 selectedItem == null &&
                 visitedUserId == null &&
-                selectedTab != MainTab.Search &&
-                selectedTab != MainTab.Messages
+                selectedTab != MainTab.Search
             ) {
                 if (timelineMenuExpanded) {
                     Box(
@@ -5143,11 +5153,16 @@ private fun AuthorRow(
     onUserClick: ((String) -> Unit)? = null,
     avatarClickable: Boolean = false,
 ) {
+    val metadataSettings = LocalMetadataDisplaySettings.current
+    val customLocation = metadataSettings.customLocation.trim().takeIf { it.isNotBlank() }
+    val locationText = customLocation?.let { "\u6765\u81EA$it" } ?: item.ipLocation
     val metadataText = listOfNotNull(
         formatWeiboTime(item.createdAt),
-        item.source?.takeIf { it.isNotBlank() }?.let { "\u6765\u81EA $it" },
+        item.source
+            ?.takeIf { metadataSettings.showDeviceSource && it.isNotBlank() }
+            ?.let { "\u6765\u81EA $it" },
         "\u5DF2\u7F16\u8F91".takeIf { item.isEdited },
-        item.ipLocation,
+        locationText,
     ).joinToString(" ")
 
     val uid = item.authorId
@@ -5211,20 +5226,8 @@ private fun singleImageDisplayAspectRatio(
 ): Float {
     if (width <= 0 || height <= 0) return 1f
     val naturalAspect = width.toFloat() / height
-    val heightToWidth = height.toFloat() / width
     val minAspectFromHeightCap = 1f / maxHeightToWidth
-    val aspect = if (heightToWidth <= 1.35f) {
-        naturalAspect.coerceIn(0.75f, 3f)
-    } else {
-        val minAspect = when {
-            heightToWidth <= 2f -> 0.72f
-            heightToWidth <= 3f -> 0.80f
-            heightToWidth <= 5f -> 0.86f
-            else -> 0.90f
-        }
-        naturalAspect.coerceAtLeast(minAspect)
-    }
-    return aspect.coerceAtLeast(minAspectFromHeightCap).coerceAtMost(3f)
+    return naturalAspect.coerceAtLeast(minAspectFromHeightCap).coerceAtMost(3f)
 }
 
 private fun feedVideoDisplayAspectRatio(media: FeedMedia): Float {
@@ -5381,9 +5384,11 @@ private fun FeedImageCell(
                     var lastPosition = down.position
                     var cancelledByMoveBeforeLongPress = false
                     var releasedBeforeLongPress = false
+                    var multiPointerGesture = false
                     val longPressed = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
                         while (true) {
                             val event = awaitPointerEvent()
+                            if (event.changes.size > 1) multiPointerGesture = true
                             val change = event.changes.firstOrNull { it.id == down.id }
                                 ?: event.changes.firstOrNull()
                                 ?: return@withTimeoutOrNull false
@@ -5398,10 +5403,10 @@ private fun FeedImageCell(
                                 return@withTimeoutOrNull false
                             }
                         }
-                    } == null && !cancelledByMoveBeforeLongPress && !releasedBeforeLongPress
+                    } == null && !cancelledByMoveBeforeLongPress && !releasedBeforeLongPress && !multiPointerGesture
 
                     if (!longPressed) {
-                        if (!cancelledByMoveBeforeLongPress) {
+                        if (!cancelledByMoveBeforeLongPress && !multiPointerGesture) {
                             onOpenViewer(imageIndex, null)
                         }
                         return@awaitEachGesture
@@ -5416,6 +5421,7 @@ private fun FeedImageCell(
                     var fullscreenByDrag = false
                     while (true) {
                         val event = awaitPointerEvent(PointerEventPass.Initial)
+                        if (event.changes.size > 1) multiPointerGesture = true
                         val change = event.changes.firstOrNull { it.id == down.id }
                             ?: event.changes.firstOrNull()
                             ?: break
@@ -6428,19 +6434,27 @@ private fun MediaStrip(
     }
 
     Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        if (images.isNotEmpty()) {
-            val gridColumns = when (images.size) {
+        val showSingleWideVideo = images.isEmpty() && medias.size == 1
+        val mediaGridItems = buildList {
+            images.forEach { image -> add(FeedMediaGridItem.Image(image)) }
+            if (!showSingleWideVideo) {
+                medias.forEach { media -> add(FeedMediaGridItem.Video(media)) }
+            }
+        }
+
+        if (mediaGridItems.isNotEmpty()) {
+            val gridColumns = when (mediaGridItems.size) {
                 1 -> 1
                 2 -> 2
                 3 -> 3
                 4 -> 2
                 else -> 3
             }
-            val rows = images.chunked(gridColumns)
+            val rows = mediaGridItems.chunked(gridColumns)
 
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                if (images.size == 1) {
-                    val image = images.first()
+                if (mediaGridItems.size == 1 && mediaGridItems.first() is FeedMediaGridItem.Image) {
+                    val image = (mediaGridItems.first() as FeedMediaGridItem.Image).image
                     val aspect = singleImageDisplayAspectRatio(
                         width = image.width ?: 0,
                         height = image.height ?: 0,
@@ -6478,16 +6492,16 @@ private fun MediaStrip(
                 } else {
                     rows.forEach { row ->
                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            row.forEach { image ->
-                                FeedImageCell(
-                                    image = image,
-                                    allImages = images,
-                                    imageIndex = images.indexOf(image),
+                            row.forEach { item ->
+                                FeedMediaGridCell(
+                                    item = item,
+                                    images = images,
+                                    playbackOwnerId = playbackOwnerId,
+                                    onImageClick = { index, onClosed -> openImageViewer(index, onClosed) },
+                                    onMediaClick = onMediaClick,
                                     modifier = Modifier
                                         .weight(1f)
                                         .aspectRatio(1f),
-                                    contentScale = ContentScale.Crop,
-                                    onOpenViewer = { index, onClosed -> openImageViewer(index, onClosed) },
                                 )
                             }
                             repeat(gridColumns - row.size) {
@@ -6511,13 +6525,71 @@ private fun MediaStrip(
             }
         }
 
-        medias.forEach { media ->
+        if (showSingleWideVideo) medias.forEach { media ->
             InlineVideoPlayer(
                 media = media,
                 playbackOwnerId = playbackOwnerId,
                 onClick = { onMediaClick(media, playbackOwnerId) },
                 onFullscreenRequest = { onMediaClick(media, playbackOwnerId) },
             )
+        }
+    }
+}
+
+private sealed interface FeedMediaGridItem {
+    data class Image(val image: FeedImage) : FeedMediaGridItem
+    data class Video(val media: FeedMedia) : FeedMediaGridItem
+}
+
+@Composable
+private fun FeedMediaGridCell(
+    item: FeedMediaGridItem,
+    images: List<FeedImage>,
+    playbackOwnerId: String,
+    onImageClick: (Int, (() -> Unit)?) -> Unit,
+    onMediaClick: (FeedMedia, String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    when (item) {
+        is FeedMediaGridItem.Image -> {
+            FeedImageCell(
+                image = item.image,
+                allImages = images,
+                imageIndex = images.indexOf(item.image).coerceAtLeast(0),
+                modifier = modifier,
+                contentScale = ContentScale.Crop,
+                onOpenViewer = onImageClick,
+            )
+        }
+
+        is FeedMediaGridItem.Video -> {
+            Box(
+                modifier = modifier
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                    .clickable { onMediaClick(item.media, playbackOwnerId) },
+                contentAlignment = Alignment.Center,
+            ) {
+                RemoteImage(
+                    url = item.media.coverUrl,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                )
+                Surface(
+                    shape = CircleShape,
+                    color = Color.Black.copy(alpha = 0.42f),
+                    contentColor = Color.White,
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_video_play),
+                        contentDescription = "视频",
+                        modifier = Modifier
+                            .padding(8.dp)
+                            .size(20.dp),
+                        tint = Color.White,
+                    )
+                }
+            }
         }
     }
 }
@@ -11345,7 +11417,7 @@ private fun MessagesScreen(
         onRootBack = onRootBack,
         scrollToTopOnPageFinished = { url -> url?.contains("/message", ignoreCase = true) != true },
         topContentPadding = if (messageRoot) 0.dp else topInset,
-        bottomContentPadding = 0.dp,
+        bottomContentPadding = if (messageRoot) 96.dp else 0.dp,
         onUrlChanged = { currentUrl = it },
         pageScript = { view, url ->
             view.applyMessagesPageChrome(messageRoot = isMessageRootUrl(url))
@@ -11559,6 +11631,8 @@ private fun MineScreen(
     onThemeModeChange: (AppThemeMode) -> Unit = {},
     feedThumbnailQuality: FeedThumbnailQuality = FeedThumbnailQuality.Medium,
     onFeedThumbnailQualityChange: (FeedThumbnailQuality) -> Unit = {},
+    metadataDisplaySettings: MetadataDisplaySettings = MetadataDisplaySettings(),
+    onMetadataDisplaySettingsChange: (MetadataDisplaySettings) -> Unit = {},
     showFollowActions: Boolean = false,
     followLoading: Boolean = false,
     onFollowClick: () -> Unit = {},
@@ -11666,6 +11740,8 @@ private fun MineScreen(
                 onThemeModeChange = onThemeModeChange,
                 feedThumbnailQuality = feedThumbnailQuality,
                 onFeedThumbnailQualityChange = onFeedThumbnailQualityChange,
+                metadataDisplaySettings = metadataDisplaySettings,
+                onMetadataDisplaySettingsChange = onMetadataDisplaySettingsChange,
                 onBack = {
                     showAccountManagement = false
                     showSettings = false
@@ -12115,6 +12191,8 @@ private fun SettingsScreen(
     onThemeModeChange: (AppThemeMode) -> Unit,
     feedThumbnailQuality: FeedThumbnailQuality,
     onFeedThumbnailQualityChange: (FeedThumbnailQuality) -> Unit,
+    metadataDisplaySettings: MetadataDisplaySettings,
+    onMetadataDisplaySettingsChange: (MetadataDisplaySettings) -> Unit,
     onBack: () -> Unit,
     onSwitchAccount: (String) -> Unit,
     onAddAccount: () -> Unit,
@@ -12185,6 +12263,12 @@ private fun SettingsScreen(
                         onExpandedChange = { imageExpanded = it },
                         quality = feedThumbnailQuality,
                         onQualityChange = onFeedThumbnailQualityChange,
+                    )
+                }
+                item {
+                    SettingsMetadataCard(
+                        settings = metadataDisplaySettings,
+                        onSettingsChange = onMetadataDisplaySettingsChange,
                     )
                 }
                 item {
@@ -12565,6 +12649,95 @@ private fun SettingsImageCard(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsMetadataCard(
+    settings: MetadataDisplaySettings,
+    onSettingsChange: (MetadataDisplaySettings) -> Unit,
+) {
+    SettingsPlainCard {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(5.dp),
+                ) {
+                    Text(
+                        text = "机型与位置显示",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = if (settings.showDeviceSource) {
+                            "微博来源机型会显示在时间后"
+                        } else {
+                            "默认隐藏微博来源机型"
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(
+                    checked = settings.showDeviceSource,
+                    onCheckedChange = { checked ->
+                        onSettingsChange(settings.copy(showDeviceSource = checked))
+                    },
+                )
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    text = "自定义位置",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                BasicTextField(
+                    value = settings.customLocation,
+                    onValueChange = { value ->
+                        onSettingsChange(settings.copy(customLocation = value.take(24)))
+                    },
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(
+                        color = MaterialTheme.colorScheme.onSurface,
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    decorationBox = { innerTextField ->
+                        Box(contentAlignment = Alignment.CenterStart) {
+                            if (settings.customLocation.isBlank()) {
+                                Text(
+                                    text = "例如：月球",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                )
+                            }
+                            innerTextField()
+                        }
+                    },
+                )
+                Text(
+                    text = "填写后会替换信息流中的位置显示，留空则使用微博原始位置。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }
