@@ -9507,30 +9507,31 @@ private fun NativeComposeScreen(
                 items(mediaUris, key = { it.toString() }) { uri ->
                     val mime = remember(uri) { context.contentResolver.getType(uri).orEmpty() }
                     if (mime.startsWith("video/")) {
-                        Row(
+                        Box(
                             modifier = Modifier
-                                .widthIn(min = 132.dp)
-                                .height(82.dp)
+                                .size(56.dp)
                                 .clip(RoundedCornerShape(10.dp))
                                 .background(MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.72f))
-                                .padding(horizontal = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween,
                         ) {
                             Text(
                                 text = "视频",
+                                modifier = Modifier.align(Alignment.Center),
                                 color = MaterialTheme.colorScheme.onSurface,
+                                style = MaterialTheme.typography.labelSmall,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
-                            ComposeMediaRemoveButton(onClick = { mediaUris = mediaUris - uri })
+                            ComposeMediaRemoveButton(
+                                modifier = Modifier.align(Alignment.TopEnd),
+                                onClick = { mediaUris = mediaUris - uri },
+                            )
                         }
                     } else {
                         Box {
                             LocalUriThumbnail(
                                 uri = uri,
                                 modifier = Modifier
-                                    .size(82.dp)
+                                    .size(56.dp)
                                     .clip(RoundedCornerShape(10.dp)),
                             )
                             ComposeMediaRemoveButton(

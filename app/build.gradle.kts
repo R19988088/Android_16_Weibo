@@ -11,6 +11,13 @@ val keystoreProperties = Properties()
 if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 }
+val localPropertiesFile = rootProject.file("local.properties")
+val localProperties = Properties()
+if (localPropertiesFile.exists()) {
+    localProperties.load(FileInputStream(localPropertiesFile))
+}
+fun buildConfigString(value: String): String =
+    "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
 val fixedKeystoreFile = rootProject.file("app/keystore/myweibo-fixed.p12")
 
@@ -30,6 +37,15 @@ android {
         versionName = "1.2.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField(
+            "String",
+            "WEIBO_MOBILE_API_COMMON_PARAMS",
+            buildConfigString(
+                providers.gradleProperty("weiboMobileApiCommonParams").orNull
+                    ?: localProperties.getProperty("weiboMobileApiCommonParams")
+                    ?: "",
+            ),
+        )
     }
 
     signingConfigs {
@@ -69,6 +85,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 

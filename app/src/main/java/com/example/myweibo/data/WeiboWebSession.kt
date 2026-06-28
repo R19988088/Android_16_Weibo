@@ -12,6 +12,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import com.example.myweibo.BuildConfig
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -1095,12 +1096,6 @@ class WeiboWebSession(context: Context) {
 
     private suspend fun uploadImageMedia(uri: Uri): ComposeMediaUploadResult {
         val errors = mutableListOf<String>()
-        runCatching { nativeUploadMssMedia(uri = uri, kind = ComposeMediaKind.Image) }
-            .onFailure { error -> errors += "see-mss-image:${error.message.orEmpty().take(160)}" }
-            .getOrNull()
-            ?.takeIf { it.mediaId.isNotBlank() }
-            ?.let { return it }
-
         suspend fun attempt(label: String, block: suspend () -> String): String? =
             runCatching { block() }
                 .onFailure { error -> errors += "$label:${error.message.orEmpty().take(160)}" }
@@ -1161,6 +1156,7 @@ class WeiboWebSession(context: Context) {
 
     private suspend fun nativeUploadMssMedia(uri: Uri, kind: ComposeMediaKind): ComposeMediaUploadResult =
         withContext(Dispatchers.IO) {
+            requireMobileApiParams()
             val file = copyUriToUploadFile(uri)
             try {
                 val address = loadUploadAddress()
@@ -1422,7 +1418,7 @@ class WeiboWebSession(context: Context) {
     private suspend fun postMssStatus(params: Map<String, String>): String =
         nativePostAbsoluteForm(
             url = "$WEIBO_MOBILE_API_BASE/2/statuses/send",
-            params = params,
+            params = withMobileApiParams(params),
             referer = "https://m.weibo.cn/",
             origin = "https://m.weibo.cn",
         )
@@ -1447,7 +1443,7 @@ class WeiboWebSession(context: Context) {
 
     private fun loadUploadAddress(): MssUploadAddress {
         val errors = mutableListOf<String>()
-        val params = emptyMap<String, String>()
+        val params = mobileApiParams()
         for (base in WEIBO_MOBILE_API_BASES) {
             val url = "$base/2/multimedia/multidiscovery"
             val address = runCatching {
@@ -1511,9 +1507,7 @@ class WeiboWebSession(context: Context) {
                 "name" to name,
                 "mediaprops" to mediaProps,
                 "type" to type,
-            ).apply {
-                MSS_SOURCE.takeIf { it.isNotBlank() }?.let { put("source", it) }
-            },
+            ).withMobileApiParams(),
             referer = "https://m.weibo.cn/",
             origin = "https://m.weibo.cn",
         )
@@ -1564,9 +1558,7 @@ class WeiboWebSession(context: Context) {
             "file_source" to "1",
             "file_upload_from" to "710",
             "act" to "send",
-        ).apply {
-            MSS_SOURCE.takeIf { it.isNotBlank() }?.let { put("source", it) }
-        }
+        ).withMobileApiParams()
         return nativePostAbsoluteOctetStreamBlocking(
             url = appendQuery(uploadUrl, params),
             file = file,
@@ -1707,6 +1699,23 @@ class WeiboWebSession(context: Context) {
         if (query.isBlank()) return url
         return url + if (url.contains("?")) "&$query" else "?$query"
     }
+
+    private fun mobileApiParams(): LinkedHashMap<String, String> =
+        WeiboMobileApiParams.parse(MOBILE_API_COMMON_PARAMS)
+
+    private fun requireMobileApiParams() {
+        if (mobileApiParams().isEmpty()) {
+            throw IllegalStateException("See 上传缺少移动端校验参数，请在 MOBILE_API_COMMON_PARAMS 配置 source/gsid/校验参数")
+        }
+    }
+
+    private fun Map<String, String>.withMobileApiParams(): LinkedHashMap<String, String> =
+        linkedMapOf<String, String>().also { merged ->
+            merged.putAll(this)
+            mobileApiParams().forEach { (key, value) ->
+                merged.putIfAbsent(key, value)
+            }
+        }
 
     private fun absoluteMobileApiUrl(url: String): String =
         when {
@@ -2232,7 +2241,7 @@ class WeiboWebSession(context: Context) {
             WEIBO_MOBILE_API_BASE,
             "https://api.weibo.com",
         )
-        private const val MSS_SOURCE = ""
+        private val MOBILE_API_COMMON_PARAMS = BuildConfig.WEIBO_MOBILE_API_COMMON_PARAMS
         private const val UPLOAD_TMP_DIR = "uploadtmp"
         private const val MUTUAL_FOLLOW_MENTION_LIMIT = 40
         private const val RELATION_LIST_MAX_PAGES = 100
