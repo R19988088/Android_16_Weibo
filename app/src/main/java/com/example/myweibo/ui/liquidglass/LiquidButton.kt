@@ -56,8 +56,8 @@ import kotlin.math.tanh
 internal val LocalHazeState = staticCompositionLocalOf<HazeState?> { null }
 internal val LocalLiquidMenuBackdrop = staticCompositionLocalOf<Backdrop?> { null }
 
-internal val LiquidGlassStrokeColor = Color.Black.copy(alpha = 0.3f)
-internal val LiquidNavigatorStrokeColor = Color.Black.copy(alpha = 0.05f)
+internal val LiquidGlassStrokeColor = Color.Black.copy(alpha = 0.24f)
+internal val LiquidNavigatorStrokeColor = LiquidGlassStrokeColor
 
 internal fun DrawScope.drawLiquidGlassStroke() {
     drawRect(

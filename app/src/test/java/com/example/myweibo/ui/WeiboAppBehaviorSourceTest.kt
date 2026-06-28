@@ -29,6 +29,13 @@ class WeiboAppBehaviorSourceTest {
     }
 
     @Test
+    fun webTabsStillProvideBottomGlassBackdrop() {
+        assertFalse(source.contains("webTabBackdropExcluded"))
+        assertTrue(source.contains(".then(if (messagesWebVisible) Modifier.layerBackdrop(bottomBarBackdrop) else Modifier)"))
+        assertTrue(source.contains(".then(if (composeWebVisible) Modifier.layerBackdrop(bottomBarBackdrop) else Modifier)"))
+    }
+
+    @Test
     fun homeTopKeepsProgressiveBlurAndWhiteSearchCapsule() {
         assertTrue(source.contains("HomeTopProgressiveBlur("))
         assertTrue(source.contains("HazeProgressive.verticalGradient("))

@@ -3291,7 +3291,6 @@ fun WeiboApp(
             val mainContentClear = visitedUserId == null && selectedItem == null
             val messagesWebVisible = selectedTab == MainTab.Messages && mainContentClear
             val composeWebVisible = selectedTab == MainTab.Compose && mainContentClear
-            val webTabBackdropExcluded = messagesWebVisible || composeWebVisible
             val messagesWebMounted = true
             val composeWebMounted = true
 
@@ -3299,6 +3298,7 @@ fun WeiboApp(
                 Box(
                     Modifier
                         .then(if (messagesWebVisible) Modifier.fillMaxSize() else Modifier.size(1.dp))
+                        .then(if (messagesWebVisible) Modifier.layerBackdrop(bottomBarBackdrop) else Modifier)
                         .graphicsLayer {
                             alpha = if (messagesWebVisible) 1f else 0f
                             clip = true
@@ -3318,6 +3318,7 @@ fun WeiboApp(
                 Box(
                     Modifier
                         .then(if (composeWebVisible) Modifier.fillMaxSize() else Modifier.size(1.dp))
+                        .then(if (composeWebVisible) Modifier.layerBackdrop(bottomBarBackdrop) else Modifier)
                         .graphicsLayer {
                             alpha = if (composeWebVisible) 1f else 0f
                             clip = true
@@ -3337,13 +3338,7 @@ fun WeiboApp(
                 Modifier
                     .fillMaxSize()
                     .zIndex(1f)
-                    .then(
-                        if (!webTabBackdropExcluded) {
-                            Modifier.layerBackdrop(bottomBarBackdrop)
-                        } else {
-                            Modifier
-                        },
-                    ),
+                    .layerBackdrop(bottomBarBackdrop),
             ) {
             val detailOverlayItem = selectedItem?.let(::resolveFeedItem)
             val feedUiOnTop = selectedTab == MainTab.Feed &&
