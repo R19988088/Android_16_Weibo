@@ -66,6 +66,13 @@ internal fun DrawScope.drawLiquidGlassStroke() {
     )
 }
 
+internal fun DrawScope.drawLiquidNavigatorStroke() {
+    drawRect(
+        color = LiquidNavigatorStrokeColor,
+        style = Stroke(width = 1.dp.toPx()),
+    )
+}
+
 internal fun DrawScope.drawLiquidGlassThemeOverlay(isLightTheme: Boolean) {
     drawRect(
         if (isLightTheme) Color.White.copy(alpha = 0.1f)

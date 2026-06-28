@@ -31,8 +31,21 @@ class WeiboAppBehaviorSourceTest {
     @Test
     fun webTabsStillProvideBottomGlassBackdrop() {
         assertFalse(source.contains("webTabBackdropExcluded"))
-        assertTrue(source.contains(".then(if (messagesWebVisible) Modifier.layerBackdrop(bottomBarBackdrop) else Modifier)"))
-        assertTrue(source.contains(".then(if (composeWebVisible) Modifier.layerBackdrop(bottomBarBackdrop) else Modifier)"))
+        assertTrue(source.contains("WebTabBottomGlassBackdropSource("))
+        assertTrue(source.contains("val webTabVisible = messagesWebVisible || composeWebVisible"))
+        assertTrue(source.contains("visible = webTabVisible"))
+        assertTrue(source.contains("if (!webTabVisible)"))
+        assertTrue(source.contains(".layerBackdrop(bottomBarBackdrop)"))
+    }
+
+    @Test
+    fun primaryTabsUseHorizontalSwitchMotionWithoutUnmountingPages() {
+        assertTrue(source.contains("private fun primaryTabTransitionOffset("))
+        assertTrue(source.contains("val primaryTabSwitchOffset by animateDpAsState("))
+        assertTrue(source.contains("primaryTabSwitchTarget = primaryTabTransitionOffset(previousPrimaryTab, selectedTab)"))
+        assertTrue(source.contains("primaryTabSwitchTarget = 0.dp"))
+        assertTrue(source.contains(".offset(x = primaryTabSwitchOffset * feedMotionMultiplier)"))
+        assertTrue(source.contains(".offset(x = primaryTabSwitchOffset * mineMotionMultiplier)"))
     }
 
     @Test
@@ -67,6 +80,15 @@ class WeiboAppBehaviorSourceTest {
         assertTrue(source.contains("private val FeedImageLoadSemaphore = Semaphore"))
         assertTrue(source.contains("loadFirstRemoteBitmap("))
         assertTrue(source.contains("async(Dispatchers.IO)"))
+    }
+
+    @Test
+    fun albumWaterfallDefersBackgroundPrefetchAfterTouchPath() {
+        assertTrue(source.contains("private const val AlbumGridPrefetchStartDelayMs = 450L"))
+        assertTrue(source.contains("private const val AlbumGridPrefetchConcurrency = 3"))
+        assertTrue(source.contains("delay(AlbumGridPrefetchStartDelayMs)"))
+        assertTrue(source.contains("snapshotFlow { albumListState.isScrollInProgress }"))
+        assertTrue(source.contains("albumRowsByIdentity(albumImages)"))
     }
 
     @Test

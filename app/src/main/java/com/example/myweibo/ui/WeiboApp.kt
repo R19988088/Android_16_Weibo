@@ -318,6 +318,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterNotNull
@@ -499,8 +500,9 @@ private const val VideoMaxWidthFraction = 1f
 private const val AlbumGridMaxDecodeDim = 320
 private const val AlbumBitmapCacheMaxBytes = 96 * 1024 * 1024
 private const val AlbumGridMaxReadBytes = 768 * 1024
-private const val AlbumGridPrefetchConcurrency = 8
-private const val AlbumGridPrefetchBatchSize = 48
+private const val AlbumGridPrefetchConcurrency = 3
+private const val AlbumGridPrefetchBatchSize = 24
+private const val AlbumGridPrefetchStartDelayMs = 450L
 private const val FeedBitmapCacheMaxBytes = 32 * 1024 * 1024
 private val FeedImageLoadSemaphore = Semaphore(6)
 private const val RemoteBytesCacheMaxTotal = 32 * 1024 * 1024
@@ -524,6 +526,43 @@ private fun navStackExitTransition() =
         animationSpec = tween(NavTransitionDurationMs, easing = FastOutSlowInEasing),
         targetOffsetX = { fullWidth -> fullWidth },
     ) + fadeOut(tween(NavTransitionDurationMs))
+
+private fun primaryTabIndex(tab: MainTab): Int? =
+    MainTab.primaryTabs.indexOf(tab).takeIf { it >= 0 }
+
+private fun primaryTabTransitionOffset(
+    from: MainTab?,
+    to: MainTab,
+): Dp {
+    val fromIndex = from?.let(::primaryTabIndex) ?: return 0.dp
+    val toIndex = primaryTabIndex(to) ?: return 0.dp
+    if (fromIndex == toIndex) return 0.dp
+    return if (toIndex > fromIndex) 36.dp else (-36).dp
+}
+
+private fun mainTabMotionMultiplier(
+    selectedTab: MainTab,
+    tab: MainTab,
+): Float =
+    when {
+        selectedTab == tab -> 1f
+        primaryTabIndex(tab) != null -> -0.35f
+        else -> 0f
+    }
+
+@Composable
+private fun WebTabBottomGlassBackdropSource(
+    visible: Boolean,
+    backdrop: Backdrop,
+) {
+    if (!visible) return
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .layerBackdrop(backdrop)
+            .background(MaterialTheme.colorScheme.background),
+    )
+}
 
 @Composable
 private fun <T> NavAnimatedOverlay(
@@ -1341,6 +1380,7 @@ fun WeiboApp(
     val profileHeaderHeights = remember { mutableStateMapOf<String, Dp>() }
 
     var selectedTab by remember { mutableStateOf(MainTab.Feed) }
+    var previousPrimaryTab by remember { mutableStateOf<MainTab?>(null) }
     val bottomBarExpanded = true
     var minePagerPage by remember { mutableStateOf(0) }
     var visitedMinePagerPage by remember { mutableStateOf(0) }
@@ -3291,14 +3331,36 @@ fun WeiboApp(
             val mainContentClear = visitedUserId == null && selectedItem == null
             val messagesWebVisible = selectedTab == MainTab.Messages && mainContentClear
             val composeWebVisible = selectedTab == MainTab.Compose && mainContentClear
+            val webTabVisible = messagesWebVisible || composeWebVisible
             val messagesWebMounted = true
             val composeWebMounted = true
+            var primaryTabSwitchTarget by remember { mutableStateOf(0.dp) }
+            val primaryTabSwitchOffset by animateDpAsState(
+                targetValue = primaryTabSwitchTarget,
+                animationSpec = tween(NavTransitionDurationMs, easing = FastOutSlowInEasing),
+                label = "primary-tab-switch-offset",
+            )
+            LaunchedEffect(selectedTab) {
+                if (primaryTabIndex(selectedTab) == null) return@LaunchedEffect
+                primaryTabSwitchTarget = primaryTabTransitionOffset(previousPrimaryTab, selectedTab)
+                withFrameMillis { }
+                primaryTabSwitchTarget = 0.dp
+                previousPrimaryTab = selectedTab
+            }
+            val feedMotionMultiplier = mainTabMotionMultiplier(selectedTab, MainTab.Feed)
+            val messagesMotionMultiplier = mainTabMotionMultiplier(selectedTab, MainTab.Messages)
+            val mineMotionMultiplier = mainTabMotionMultiplier(selectedTab, MainTab.Mine)
+
+            WebTabBottomGlassBackdropSource(
+                visible = webTabVisible,
+                backdrop = bottomBarBackdrop,
+            )
 
             if (messagesWebMounted) {
                 Box(
                     Modifier
                         .then(if (messagesWebVisible) Modifier.fillMaxSize() else Modifier.size(1.dp))
-                        .then(if (messagesWebVisible) Modifier.layerBackdrop(bottomBarBackdrop) else Modifier)
+                        .offset(x = primaryTabSwitchOffset * messagesMotionMultiplier)
                         .graphicsLayer {
                             alpha = if (messagesWebVisible) 1f else 0f
                             clip = true
@@ -3338,7 +3400,13 @@ fun WeiboApp(
                 Modifier
                     .fillMaxSize()
                     .zIndex(1f)
-                    .layerBackdrop(bottomBarBackdrop),
+                    .then(
+                        if (!webTabVisible) {
+                            Modifier.layerBackdrop(bottomBarBackdrop)
+                        } else {
+                            Modifier
+                        },
+                    ),
             ) {
             val detailOverlayItem = selectedItem?.let(::resolveFeedItem)
             val feedUiOnTop = selectedTab == MainTab.Feed &&
@@ -3388,6 +3456,7 @@ fun WeiboApp(
                         Modifier
                             .fillMaxSize()
                             .background(MaterialTheme.colorScheme.background)
+                            .offset(x = primaryTabSwitchOffset * feedMotionMultiplier)
                             .graphicsLayer { alpha = feedVisibleAlpha }
                             .blockHiddenTouches(feedUiOnTop),
                     ) {
@@ -3604,6 +3673,7 @@ fun WeiboApp(
                                 }
                             }
                             MineScreen(
+                                modifier = Modifier.offset(x = primaryTabSwitchOffset * mineMotionMultiplier),
                                 session = session,
                                 profile = mineProfile,
                                 profileHeaderHeight = profileHeaderHeights["mine-self"] ?: 0.dp,
@@ -11673,6 +11743,7 @@ private fun PlaceholderScreen(
 
 @Composable
 private fun MineScreen(
+    modifier: Modifier = Modifier,
     session: WeiboWebSession,
     profile: UserProfile?,
     profileHeaderHeight: Dp,
@@ -11887,11 +11958,16 @@ private fun MineScreen(
             .collect { onLoadMoreAlbum() }
     }
 
-    LaunchedEffect(albumImages, activePagerSideEffects) {
+    LaunchedEffect(albumImages, albumListState, activePagerSideEffects) {
         if (ProfilePagerSideEffect.AlbumPrefetch !in activePagerSideEffects) return@LaunchedEffect
-        if (albumImages.isNotEmpty()) {
-            prefetchAlbumGridThumbnails(albumImages)
-        }
+        if (albumImages.isEmpty()) return@LaunchedEffect
+        snapshotFlow { albumListState.isScrollInProgress }
+            .distinctUntilChanged()
+            .filter { scrolling -> !scrolling }
+            .collectLatest {
+                delay(AlbumGridPrefetchStartDelayMs)
+                prefetchAlbumGridThumbnails(albumImages)
+            }
     }
 
     val mineTabScrollPosition by remember {
@@ -11938,7 +12014,7 @@ private fun MineScreen(
         else -> Dp.Unspecified
     }
 
-    Box(Modifier.fillMaxSize()) {
+    Box(modifier.fillMaxSize()) {
     Column(
         Modifier
             .fillMaxSize()
@@ -12152,7 +12228,7 @@ MineContentTab.Posts -> postsListState.animateScrollToTopFixed()
 
                         MineContentTab.Album -> {
                             val albumRows = remember(albumImages) {
-                                buildAlbumGridRows(groupAlbumImagesByMonth(albumImages))
+                                albumRowsByIdentity(albumImages)
                             }
                             val stickyMonthLabel by remember(albumRows, albumListState) {
                                 derivedStateOf {
@@ -14614,6 +14690,9 @@ private fun buildAlbumGridRows(
         }
     }
 }
+
+private fun albumRowsByIdentity(albumImages: List<FeedImage>): List<AlbumGridRow> =
+    buildAlbumGridRows(groupAlbumImagesByMonth(albumImages))
 
 private fun groupAlbumImagesByMonth(
     albumImages: List<FeedImage>,

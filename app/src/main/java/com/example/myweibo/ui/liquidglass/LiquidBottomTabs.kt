@@ -256,7 +256,6 @@ fun LiquidBottomTabs(
                     clip = false
                     translationX = panelOffset
                 }
-                .drawLiquidNavigatorBorder(RoundedCornerShape(percent = 50))
                 .drawBackdrop(
                     backdrop = backdrop,
                     shape = { RoundedCornerShape(percent = 50) },
@@ -274,6 +273,7 @@ fun LiquidBottomTabs(
                     onDrawSurface = {
                         drawRect(surfaceColor)
                         drawLiquidGlassThemeOverlay(isLightTheme)
+                        drawLiquidNavigatorStroke()
                     }
                 )
                 .then(interactiveHighlight.modifier)
@@ -299,7 +299,6 @@ fun LiquidBottomTabs(
                     .graphicsLayer {
                         translationX = panelOffset
                     }
-                    .drawLiquidNavigatorBorder(RoundedCornerShape(percent = 50))
                     .drawBackdrop(
                         backdrop = backdrop,
                         shape = { RoundedCornerShape(percent = 50) },
@@ -319,6 +318,7 @@ fun LiquidBottomTabs(
                         onDrawSurface = {
                             drawRect(surfaceColor)
                             drawLiquidGlassThemeOverlay(isLightTheme)
+                            drawLiquidNavigatorStroke()
                         }
                     )
                     .then(interactiveHighlight.modifier)
