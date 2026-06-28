@@ -72,6 +72,7 @@ fun LiquidBottomTabs(
     feedTabIndex: Int = 0,
     lensScale: Float = 1f,
     accentColor: Color? = null,
+    transparentSurface: Boolean = false,
     onTabLongPress: (index: Int) -> Unit = {},
     onTabDoubleTap: (index: Int) -> Unit = {},
     content: @Composable RowScope.() -> Unit
@@ -271,7 +272,9 @@ fun LiquidBottomTabs(
                         scaleY = scale
                     },
                     onDrawSurface = {
-                        drawRect(surfaceColor)
+                        if (!transparentSurface) {
+                            drawRect(surfaceColor)
+                        }
                         drawLiquidGlassThemeOverlay(isLightTheme)
                         drawLiquidNavigatorStroke()
                     }
@@ -316,7 +319,9 @@ fun LiquidBottomTabs(
                             Highlight.Default.copy(alpha = progress)
                         },
                         onDrawSurface = {
-                            drawRect(surfaceColor)
+                            if (!transparentSurface) {
+                                drawRect(surfaceColor)
+                            }
                             drawLiquidGlassThemeOverlay(isLightTheme)
                             drawLiquidNavigatorStroke()
                         }

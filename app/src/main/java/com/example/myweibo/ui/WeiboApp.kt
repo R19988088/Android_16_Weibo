@@ -3351,9 +3351,10 @@ fun WeiboApp(
             val feedMotionMultiplier = mainTabMotionMultiplier(selectedTab, MainTab.Feed)
             val messagesMotionMultiplier = mainTabMotionMultiplier(selectedTab, MainTab.Messages)
             val mineMotionMultiplier = mainTabMotionMultiplier(selectedTab, MainTab.Mine)
+            val fallbackWebBackdropVisible = composeWebVisible
 
             WebTabBottomGlassBackdropSource(
-                visible = webTabVisible,
+                visible = fallbackWebBackdropVisible,
                 backdrop = bottomBarBackdrop,
             )
 
@@ -3373,6 +3374,7 @@ fun WeiboApp(
                         onRootBack = {
                             selectedTab = MainTab.Feed
                         },
+                        bottomBarBackdrop = bottomBarBackdrop,
                         active = messagesWebVisible,
                     )
                 }
@@ -3976,6 +3978,7 @@ fun WeiboApp(
                     feedTabLabel = timelineKind.label,
                     selectedTimelineKind = timelineKind,
                     accentColor = accentColorArgb?.let { Color(it.toInt()) },
+                    transparentGlass = webTabVisible,
                     onTimelineKindChange = { kind ->
                         dismissFollowListForTabSwitch()
                         selectedTab = MainTab.Feed
@@ -11427,6 +11430,8 @@ private fun MobileWeiboWebScreen(
     userAgent: String? = null,
     topContentPadding: Dp? = null,
     bottomContentPadding: Dp? = null,
+    backdrop: LayerBackdrop? = null,
+    enableSeparateWebBackdrop: Boolean = false,
     onUrlChanged: (String?) -> Unit = {},
     pageScript: (WebView, String?) -> Unit = { _, _ -> },
     active: Boolean = true,
@@ -11557,8 +11562,17 @@ private fun MobileWeiboWebScreen(
             .fillMaxSize()
             .padding(top = resolvedTopContentPadding, bottom = bottomInset),
     ) {
+        val webViewModifier = Modifier
+            .fillMaxSize()
+            .then(
+                if (enableSeparateWebBackdrop && backdrop != null) {
+                    Modifier.layerBackdrop(backdrop)
+                } else {
+                    Modifier
+                },
+            )
         AndroidView(
-            modifier = Modifier.fillMaxSize(),
+            modifier = webViewModifier,
             factory = { webView },
             update = { view ->
                 view.visibility = if (active) View.VISIBLE else View.INVISIBLE
@@ -11570,6 +11584,7 @@ private fun MobileWeiboWebScreen(
 @Composable
 private fun MessagesScreen(
     onRootBack: () -> Unit,
+    bottomBarBackdrop: LayerBackdrop,
     active: Boolean = true,
 ) {
     var currentUrl by remember { mutableStateOf<String?>(null) }
@@ -11583,6 +11598,8 @@ private fun MessagesScreen(
         scrollToTopOnPageFinished = { url -> url?.contains("/message", ignoreCase = true) != true },
         topContentPadding = if (messageRoot) 20.dp else topInset,
         bottomContentPadding = if (messageRoot) 0.dp else 0.dp,
+        backdrop = bottomBarBackdrop,
+        enableSeparateWebBackdrop = true,
         onUrlChanged = { currentUrl = it },
         pageScript = { view, url ->
             view.applyMessagesPageChrome(messageRoot = isMessageRootUrl(url))
@@ -11641,61 +11658,133 @@ private fun WebView.installMessageAvatarProfileNavigation() {
                 }
             }
 
-            function profileUidFromValue(value) {
+            function profileUidFromValue(value, allowBareNumber) {
                 var text = normalizedText(value);
                 var patterns = [
                     /(?:^|[?&#])(?:uid|user_id|profile_uid|target_uid|recipient_id|sender_id)=([0-9]{4,})/i,
+                    /(?:^|[?&#])(?:to|from)=([0-9]{4,})/i,
                     /(?:\/profile\/|\/u\/)([0-9]{4,})/i,
-                    /100505([0-9]{4,})/i
+                    /100505([0-9]{4,})/i,
+                    /\/([0-9]{5,})\/(?:avatar|profile|head|face)/i
                 ];
                 for (var i = 0; i < patterns.length; i += 1) {
                     var match = text.match(patterns[i]);
                     if (match && match[1]) return match[1];
                 }
+                if (!allowBareNumber) return '';
                 return /^[0-9]{4,}$/.test(text) ? text : '';
             }
 
-            function profileUrlFromMessageAvatar(target) {
+            function uidFromNodeAndParents(target, maxDepth) {
                 var node = target;
-                for (var depth = 0; node && depth < 10; depth += 1, node = node.parentElement) {
+                for (var depth = 0; node && depth < maxDepth; depth += 1, node = node.parentElement) {
                     if (node.tagName === 'A' && node.href) {
-                        var linkUid = profileUidFromValue(node.href);
-                        if (linkUid) return 'https://m.weibo.cn/profile/' + linkUid;
+                        var linkUid = profileUidFromValue(node.href, false);
+                        if (linkUid) return linkUid;
                     }
                     if (!node.attributes) continue;
                     for (var i = 0; i < node.attributes.length; i += 1) {
                         var attr = node.attributes[i];
                         if (!attr || !attr.value) continue;
-                        var uid = profileUidFromValue(attr.value);
-                        if (uid) return 'https://m.weibo.cn/profile/' + uid;
+                        if (/(mid|msg|message|conversation|chat|room|gid|containerid)$/i.test(attr.name)) continue;
+                        var uid = profileUidFromValue(attr.value, /uid|user|sender|recipient|target|from|to/i.test(attr.name));
+                        if (uid) return uid;
                     }
                 }
                 return '';
             }
 
-            function isMessageAvatarTarget(target) {
+            function followElementText(target) {
                 var node = target;
-                for (var depth = 0; node && depth < 4; depth += 1, node = node.parentElement) {
+                var parts = [];
+                for (var depth = 0; node && depth < 7; depth += 1, node = node.parentElement) {
+                    if (node.dataset) {
+                        Object.keys(node.dataset).forEach(function(key) {
+                            parts.push(key + '=' + node.dataset[key]);
+                        });
+                    }
+                    parts.push(node.id || '');
+                    parts.push(node.className && node.className.baseVal ? node.className.baseVal : node.className);
+                    parts.push(node.getAttribute && node.getAttribute('style'));
+                    parts.push(node.getAttribute && node.getAttribute('href'));
+                    parts.push(node.getAttribute && node.getAttribute('data-url'));
+                    parts.push(node.getAttribute && node.getAttribute('data-href'));
+                    parts.push(node.getAttribute && node.getAttribute('action-data'));
+                    parts.push(node.getAttribute && node.getAttribute('suda-data'));
+                    parts.push(node.getAttribute && node.getAttribute('src'));
+                    try {
+                        var bg = window.getComputedStyle(node).backgroundImage;
+                        if (bg && bg !== 'none') parts.push(bg);
+                    } catch (e) {}
+                }
+                return parts.join(' ');
+            }
+
+            function messageAvatarCandidatesFromPoint(event) {
+                var items = [];
+                if (document.elementsFromPoint) {
+                    items = document.elementsFromPoint(event.clientX, event.clientY) || [];
+                } else {
+                    var hit = document.elementFromPoint(event.clientX, event.clientY);
+                    if (hit) items = [hit];
+                }
+                if (items.indexOf(event.target) < 0) items.unshift(event.target);
+                return items;
+            }
+
+            function hasAvatarImageSignal(target) {
+                var node = target;
+                for (var depth = 0; node && depth < 5; depth += 1, node = node.parentElement) {
                     var probe = [
                         node.tagName,
                         node.id,
                         node.className && node.className.baseVal ? node.className.baseVal : node.className,
                         node.getAttribute && node.getAttribute('src'),
-                        node.getAttribute && node.getAttribute('alt')
+                        node.getAttribute && node.getAttribute('alt'),
+                        node.getAttribute && node.getAttribute('style')
                     ].join(' ').toLowerCase();
+                    try {
+                        probe += ' ' + window.getComputedStyle(node).backgroundImage.toLowerCase();
+                    } catch (e) {}
                     if (/(emoji|emoticon|sticker|photo|picture|media|album|content-img|msg-img)/.test(probe)) {
                         return false;
                     }
-                    if (/(avatar|avator|head|face|portrait|profile)/.test(probe)) {
+                    if (/(avatar|avator|head|face|portrait|profile|usercard|ucard|m-img-box|msg-head)/.test(probe)) {
                         return true;
                     }
                 }
                 return false;
             }
 
+            function profileUrlFromMessageAvatar(target, event) {
+                var candidates = event ? messageAvatarCandidatesFromPoint(event) : [target];
+                for (var i = 0; i < candidates.length; i += 1) {
+                    var candidate = candidates[i];
+                    if (!candidate) continue;
+                    var uid = uidFromNodeAndParents(candidate, 10);
+                    if (uid && hasAvatarImageSignal(candidate)) {
+                        return 'https://m.weibo.cn/profile/' + uid;
+                    }
+                    var textUid = profileUidFromValue(followElementText(candidate), false);
+                    if (textUid && hasAvatarImageSignal(candidate)) {
+                        return 'https://m.weibo.cn/profile/' + textUid;
+                    }
+                }
+                var fallbackUid = uidFromNodeAndParents(target, 12) || profileUidFromValue(followElementText(target), false);
+                if (!fallbackUid) return '';
+                var rectNode = target;
+                for (var depth = 0; rectNode && depth < 4; depth += 1, rectNode = rectNode.parentElement) {
+                    var rect = rectNode.getBoundingClientRect && rectNode.getBoundingClientRect();
+                    if (!rect) continue;
+                    if (rect.width <= 96 && rect.height <= 96) {
+                        return 'https://m.weibo.cn/profile/' + fallbackUid;
+                    }
+                }
+                return '';
+            }
+
             document.addEventListener('click', function(event) {
-                if (!isMessageAvatarTarget(event.target)) return;
-                var url = profileUrlFromMessageAvatar(event.target);
+                var url = profileUrlFromMessageAvatar(event.target, event);
                 if (!url) return;
                 event.preventDefault();
                 event.stopPropagation();

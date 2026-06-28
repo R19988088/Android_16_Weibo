@@ -41,6 +41,7 @@ import com.example.myweibo.ui.liquidglass.LiquidBottomTab
 import com.example.myweibo.ui.liquidglass.LiquidBottomTabs
 import com.example.myweibo.ui.liquidglass.LocalLiquidBottomTabBackdropRow
 import com.example.myweibo.ui.liquidglass.SurfaceLiquidIconButton
+import com.example.myweibo.ui.liquidglass.TransparentLiquidIconButton
 import com.kyant.backdrop.Backdrop
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -59,6 +60,7 @@ internal fun WeiboLiquidBottomBar(
     selectedTimelineKind: TimelineKind = TimelineKind.Following,
     onTimelineKindChange: (TimelineKind) -> Unit = {},
     accentColor: Color? = null,
+    transparentGlass: Boolean = false,
     onComposeClick: () -> Unit,
     onFeedDoubleTap: () -> Unit = {},
     timelineMenuContent: @Composable (dismiss: () -> Unit) -> Unit,
@@ -141,6 +143,7 @@ internal fun WeiboLiquidBottomBar(
                             tabsCount = tabs.size,
                             feedTabIndex = feedIndex,
                             lensScale = 2f,
+                            transparentSurface = transparentGlass,
                             onTabLongPress = { onTimelineMenuExpandedChange(true) },
                             onTabDoubleTap = { index ->
                                 if (tabs[index] == MainTab.Feed) onFeedDoubleTap()
@@ -193,37 +196,66 @@ internal fun WeiboLiquidBottomBar(
                                 scaleY = 0.9f + collapsedAlpha * 0.1f
                             },
                     ) {
-                        SurfaceLiquidIconButton(
-                            onClick = onExpandRequest,
-                            onDoubleClick = onCollapsedTap,
-                            backdrop = backdrop,
-                            isInteractive = collapsedOnTop && collapsedAlpha > 0.5f,
-                            lensScale = 2f,
-                            modifier = Modifier.fillMaxSize(),
-                        ) {
+                        val buttonContent: @Composable () -> Unit = {
                             WeiboTabIcon(
                                 tab = selectedTab,
                                 color = resolvedAccentColor,
                                 size = 24.dp,
                             )
                         }
+                        if (transparentGlass) {
+                            TransparentLiquidIconButton(
+                                onClick = onExpandRequest,
+                                onDoubleClick = onCollapsedTap,
+                                backdrop = backdrop,
+                                isInteractive = collapsedOnTop && collapsedAlpha > 0.5f,
+                                modifier = Modifier.fillMaxSize(),
+                            ) {
+                                buttonContent()
+                            }
+                        } else {
+                            SurfaceLiquidIconButton(
+                                onClick = onExpandRequest,
+                                onDoubleClick = onCollapsedTap,
+                                backdrop = backdrop,
+                                isInteractive = collapsedOnTop && collapsedAlpha > 0.5f,
+                                lensScale = 2f,
+                                modifier = Modifier.fillMaxSize(),
+                            ) {
+                                buttonContent()
+                            }
+                        }
                     }
                 }
             }
 
-            SurfaceLiquidIconButton(
-                onClick = onComposeClick,
-                backdrop = backdrop,
-                lensScale = 2f,
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .size(composeButtonSize),
-            ) {
+            val composeButtonModifier = Modifier
+                .align(Alignment.BottomEnd)
+                .size(composeButtonSize)
+            val composeButtonContent: @Composable () -> Unit = {
                 WeiboTabIcon(
                     tab = MainTab.Compose,
                     color = if (selectedTab == MainTab.Compose) resolvedAccentColor else unselectedColor,
                     size = 24.dp,
                 )
+            }
+            if (transparentGlass) {
+                TransparentLiquidIconButton(
+                    onClick = onComposeClick,
+                    backdrop = backdrop,
+                    modifier = composeButtonModifier,
+                ) {
+                    composeButtonContent()
+                }
+            } else {
+                SurfaceLiquidIconButton(
+                    onClick = onComposeClick,
+                    backdrop = backdrop,
+                    lensScale = 2f,
+                    modifier = composeButtonModifier,
+                ) {
+                    composeButtonContent()
+                }
             }
 
             if (timelineMenuExpanded) {

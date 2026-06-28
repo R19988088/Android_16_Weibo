@@ -10,7 +10,11 @@ class WeiboAppBehaviorSourceTest {
         listOf(
             File("src/main/java/com/example/myweibo/ui/WeiboApp.kt"),
             File("app/src/main/java/com/example/myweibo/ui/WeiboApp.kt"),
-        ).first(File::exists).readText()
+            File("src/main/java/com/example/myweibo/ui/WeiboLiquidBottomBar.kt"),
+            File("app/src/main/java/com/example/myweibo/ui/WeiboLiquidBottomBar.kt"),
+            File("src/main/java/com/example/myweibo/ui/liquidglass/LiquidBottomTabs.kt"),
+            File("app/src/main/java/com/example/myweibo/ui/liquidglass/LiquidBottomTabs.kt"),
+        ).filter(File::exists).joinToString("\n") { it.readText() }
     }
 
     @Test
@@ -33,6 +37,11 @@ class WeiboAppBehaviorSourceTest {
         assertTrue(source.contains("installMessageAvatarProfileNavigation()"))
         assertTrue(source.contains("window.__myweiboMessageAvatarProfileNavigation"))
         assertTrue(source.contains("profileUrlFromMessageAvatar"))
+        assertTrue(source.contains("messageAvatarCandidatesFromPoint"))
+        assertTrue(source.contains("backgroundImage"))
+        assertTrue(source.contains("followElementText"))
+        assertTrue(source.contains("conversation|chat|room|gid|containerid"))
+        assertTrue(source.contains("profileUidFromValue(value, allowBareNumber)"))
         assertTrue(source.contains("document.addEventListener('click'"))
         assertTrue(source.contains("https://m.weibo.cn/profile/"))
     }
@@ -48,8 +57,12 @@ class WeiboAppBehaviorSourceTest {
         assertFalse(source.contains("webTabBackdropExcluded"))
         assertTrue(source.contains("WebTabBottomGlassBackdropSource("))
         assertTrue(source.contains("val webTabVisible = messagesWebVisible || composeWebVisible"))
-        assertTrue(source.contains("visible = webTabVisible"))
-        assertTrue(source.contains("if (!webTabVisible)"))
+        assertTrue(source.contains("val fallbackWebBackdropVisible = composeWebVisible"))
+        assertTrue(source.contains("visible = fallbackWebBackdropVisible"))
+        assertTrue(source.contains("enableSeparateWebBackdrop = true"))
+        assertTrue(source.contains("transparentGlass = webTabVisible"))
+        assertTrue(source.contains("transparentSurface = transparentGlass"))
+        assertTrue(source.contains("Modifier.layerBackdrop(bottomBarBackdrop)"))
         assertTrue(source.contains(".layerBackdrop(bottomBarBackdrop)"))
     }
 
